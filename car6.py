@@ -17,7 +17,7 @@ def create_producer():
     )
 
 def update_car_data_while_charging(data):
-    data['charge'] += 30  # 30% charge per 30 minutes
+    data['charge'] += 50  # 50% charge per 30 minutes
     if data['charge'] > 100:   # Ensure charging does not exceed 100%
         data['charge'] = 100
     if random.random() < 0.5:  # 50% chance to stop charging each time step
@@ -81,15 +81,15 @@ def main():
 
     # Initial data
     data = {
-        'car_id': 'car3',
-        'model': 'Model E',
-        'current_speed': 75,  # km/h
-        'battery_capacity': 30,  # kWh  
-        'charge': 80,  # %  (percentage)
-        'consumption': 0.10,  # kWh/1 km  
-        'engine_power': 100,  # kW
-        'engine_torque': 180,  # Nm
-        'location': 172,  # km
+        'car_id': 'car6',
+        'model': 'Model S',
+        'current_speed': 70,  # km/h
+        'battery_capacity': 44,  # kWh  
+        'charge': 69,  # %  (percentage)
+        'consumption': 0.11,  # kWh/1 km  
+        'engine_power': 120,  # kW
+        'engine_torque': 210,  # Nm
+        'location': 160,  # km
         'node': 'Node 2',
         'charging': False,
         'distance_covered': 0,

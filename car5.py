@@ -81,16 +81,16 @@ def main():
 
     # Initial data
     data = {
-        'car_id': 'car3',
-        'model': 'Model E',
-        'current_speed': 75,  # km/h
-        'battery_capacity': 30,  # kWh  
-        'charge': 80,  # %  (percentage)
-        'consumption': 0.10,  # kWh/1 km  
-        'engine_power': 100,  # kW
-        'engine_torque': 180,  # Nm
-        'location': 172,  # km
-        'node': 'Node 2',
+        'car_id': 'car5',
+        'model': 'Model W',
+        'current_speed': 60,  # km/h
+        'battery_capacity': 47,  # kWh  
+        'charge': 55,  # %  (percentage)
+        'consumption': 0.14,  # kWh/1 km  
+        'engine_power': 120,  # kW
+        'engine_torque': 220,  # Nm
+        'location': 66,  # km
+        'node': 'Node 1',
         'charging': False,
         'distance_covered': 0,
         'battery_life': 100  # %, 100 being a brand new battery

@@ -18,10 +18,13 @@ def create_producer():
 
 def update_car_data_while_charging(data):
     data['charge'] += 30  # 30% charge per 30 minutes
+    if data['charge'] > 100:   # Ensure charging does not exceed 100%
+        data['charge'] = 100
     if random.random() < 0.5:  # 50% chance to stop charging each time step
         data['charging'] = False
 
 def update_car_data_while_moving(data, distance_step):
+    # Updating location, distance covered, and current speed
     data['location'] += distance_step
     data['distance_covered'] += distance_step
     speed_factor = data['current_speed'] / BASE_SPEED
@@ -29,27 +32,47 @@ def update_car_data_while_moving(data, distance_step):
     modified_consumption = adjusted_consumption * (1 + ((100 - data['battery_life']) / 100) * DEGRADATION_FACTOR)
     data['charge'] -= modified_consumption * distance_step / data['battery_capacity'] * 100
     data['battery_life'] -= BATTERY_LIFE_DEGRADATION_RATE
-
-    if data['charge'] <= 30 and data['location'] not in CHARGING_STATIONS:
+    
+    # Check if the current location is approaching a charging station and if charge is low
+    if data['charge'] <= 30:
         next_station = next((station for station in CHARGING_STATIONS if station > data['location']), None)
         if next_station:
-            data['location'] = next_station
-            data['charging'] = True
-    
+            distance_to_next_station = next_station - data['location']
+            charge_required_to_reach_station = distance_to_next_station / data['battery_capacity'] * data['consumption'] * 100
+
+            # If there's enough charge to reach the station, then update location and start charging
+            if data['charge'] >= charge_required_to_reach_station:
+                data['location'] = next_station
+                data['charging'] = True
+            else:
+                # If not enough charge to reach the station, move as far as possible and set charge to 0
+                distance_possible = data['charge'] / data['consumption'] * data['battery_capacity'] / 100
+                data['location'] += distance_possible
+                data['charge'] = 0
+                data['charging'] = False
+
+    # Simulating slight variations in speed
     speed_variation = 10
     min_speed = 10
     max_speed = 180
     data['current_speed'] = random.randint(max(data['current_speed'] - speed_variation, min_speed), 
-                                        min(data['current_speed'] + speed_variation, max_speed))
+                                           min(data['current_speed'] + speed_variation, max_speed))
 
+    # Update the node based on the current location
     if data['location'] < 150:
         data['node'] = 'Node 1'
-    elif data['location'] < 270:
+    elif data['location'] < 220:
         data['node'] = 'Node 2'
-    elif data['location'] < 460:
+    elif data['location'] < 300:
         data['node'] = 'Node 3'
-    else:
+    elif data['location'] < 400:
         data['node'] = 'Node 4'
+    elif data['location'] < 500:
+        data['node'] = 'Node 5'
+    elif data['location'] < 600:
+        data['node'] = 'Node 6'
+    else:
+        data['node'] = 'Node 7'
 
     return modified_consumption
 
@@ -58,15 +81,15 @@ def main():
 
     # Initial data
     data = {
-        'car_id': 'ABC123',
-        'model': 'Model S',
-        'current_speed': 90,  # km/h
-        'battery_capacity': 40,  # kWh  
-        'charge': 99,  # %  (percentage)
-        'consumption': 0.19,  # kWh/1 km  
+        'car_id': 'car1',
+        'model': 'Model D',
+        'current_speed': 50,  # km/h
+        'battery_capacity': 50,  # kWh  
+        'charge': 49,  # %  (percentage)
+        'consumption': 0.119,  # kWh/1 km  
         'engine_power': 120,  # kW
-        'engine_torque': 250,  # Nm
-        'location': 10,  # km
+        'engine_torque': 240,  # Nm
+        'location': 110,  # km
         'node': 'Node 1',
         'charging': False,
         'distance_covered': 0,
