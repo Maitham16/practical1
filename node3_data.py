@@ -1,7 +1,6 @@
 import csv
 from kafka import KafkaConsumer
 import json
-from datetime import datetime
 
 def start_consumer(topic_name):
     consumer = KafkaConsumer(
@@ -14,8 +13,7 @@ def start_consumer(topic_name):
     with open(f'{topic_name}.csv', 'w', newline='') as file:
         writer = csv.writer(file)
         
-        # Include timestamp in the header
-        writer.writerow(["timestamp", "car_id", "model", "current_speed", "battery_capacity", 
+        writer.writerow(["simulated_timestamp", "car_id", "model", "current_speed", "battery_capacity", 
                          "charge", "consumption", "engine_power", "engine_torque",
                          "location", "node", "charging", "distance_covered"])
 
@@ -24,11 +22,10 @@ def start_consumer(topic_name):
             data = msg.value
             print(f"Received data from {topic_name}: {data}")
             
-            # Capture the current timestamp when data is received
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            simulated_timestamp = data['timestamp']
             
-            # Write the timestamp followed by the other data fields to the CSV file
-            writer.writerow([timestamp] + [data[key] for key in data])
+            # Write the data to the CSV file
+            writer.writerow([simulated_timestamp] + [data[key] for key in data])
 
 if __name__ == "__main__":
     start_consumer('node3_data')

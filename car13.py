@@ -86,19 +86,19 @@ def main():
 
     # Initial data
     data = {
-        'car_id': 'car1', # unique identifier for each car
-        'model': 'Model D', # car model
-        'current_speed': 50,  # km/h
-        'battery_capacity': 50,  # kWh  
-        'charge': 49,  # %  (percentage)
-        'consumption': 0.119,  # kWh/1 km  
-        'engine_power': 120,  # kW
-        'engine_torque': 240,  # Nm
-        'location': 110,  # km
-        'node': 'Node 1', # node the car is currently in
+        'car_id': 'car13', # unique identifier for each car
+        'model': 'Model R', # car model
+        'current_speed': 65,  # km/h
+        'battery_capacity': 40,  # kWh  
+        'charge': 45,  # %  (percentage)
+        'consumption': 0.11,  # kWh/1 km  
+        'engine_power': 110,  # kW
+        'engine_torque': 230,  # Nm
+        'location': 400,  # km
+        'node': 'Node 4', # node the car is currently in
         'charging': False, # whether the car is currently charging
         'distance_covered': 0, # km
-        'battery_life': 100  # %, 100 being a brand new battery
+        'battery_life': 99  # %, 100 being a brand new battery
     }
 
     time_step = 1 # minutes per time step
