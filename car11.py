@@ -90,8 +90,8 @@ def main():
         'model': 'Model N', # car model
         'current_speed': 82,  # km/h
         'battery_capacity': 60,  # kWh  
-        'charge': 55,  # %  (percentage)
-        'consumption': 0.13,  # kWh/1 km  
+        'charge': 77,  # %  (percentage)
+        'consumption': 0.12,  # kWh/1 km  
         'engine_power': 120,  # kW
         'engine_torque': 220,  # Nm
         'location': 177,  # km

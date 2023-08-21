@@ -90,15 +90,15 @@ def main():
         'model': 'Model R', # car model
         'current_speed': 65,  # km/h
         'battery_capacity': 40,  # kWh  
-        'charge': 45,  # %  (percentage)
-        'consumption': 0.11,  # kWh/1 km  
+        'charge': 65,  # %  (percentage)
+        'consumption': 0.13,  # kWh/1 km  
         'engine_power': 110,  # kW
         'engine_torque': 230,  # Nm
         'location': 400,  # km
         'node': 'Node 4', # node the car is currently in
         'charging': False, # whether the car is currently charging
         'distance_covered': 0, # km
-        'battery_life': 99  # %, 100 being a brand new battery
+        'battery_life': 90  # %, 100 being a brand new battery
     }
 
     time_step = 1 # minutes per time step
