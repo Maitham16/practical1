@@ -103,7 +103,7 @@ def main():
         'charge': 91,
         'consumption': 0.11,
         'location': 0,
-        'car_status': "moving",  # can be "moving" or "charging"
+        'car_status': "moving",
         'distance_covered': 0,
         'battery_life': 100,
         'distance_to_charging_point': calculate_distance_to_next_station(0)
