@@ -102,11 +102,13 @@ def main():
         'battery_capacity': 45,
         'charge': 88,
         'consumption': 0.11,
-        'location': 0,
+        'location': 423,
+        'node': 'Node 4',
         'car_status': "moving",
         'distance_covered': 0,
         'battery_life': 99,
-        'distance_to_charging_point': calculate_distance_to_next_station(0)
+        'distance_to_charging_point': calculate_distance_to_next_station(423),
+        'charging': False
     }
 
     time_step = 1 # minutes per time step
