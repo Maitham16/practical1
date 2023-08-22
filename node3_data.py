@@ -13,8 +13,8 @@ def start_consumer(topic_name):
     # Define the columns for the CSV
     columns = [
         "timestamp", "car_id", "model", "current_speed", "battery_capacity", 
-        "charge", "consumption", "engine_power", "engine_torque",
-        "location", "node", "charging", "distance_covered", "battery_life"
+        "charge", "consumption", "location", "node", "car_status", 
+        "distance_covered", "battery_life", "distance_to_charging_point"
     ]
 
     # Create a CSV file and write the headers

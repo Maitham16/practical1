@@ -26,6 +26,12 @@ def get_simulated_timestamp(real_start_time, simulated_start_time, speed_factor)
     simulated_elapsed = real_elapsed * speed_factor
     return simulated_start_time + simulated_elapsed
 
+def calculate_distance_to_next_station(location):
+    next_station = next((station for station in CHARGING_STATIONS if station > location), None)
+    if next_station:
+        return next_station - location
+    return float('inf')  # No next station found
+
 def update_car_data_while_charging(data):
     data['charge'] += 30  # 30% charge per 30 minutes
     if data['charge'] > 100:   # Ensure charging does not exceed 100%
@@ -42,7 +48,9 @@ def update_car_data_while_moving(data, distance_step):
     modified_consumption = adjusted_consumption * (1 + ((100 - data['battery_life']) / 100) * DEGRADATION_FACTOR)
     data['charge'] -= modified_consumption * distance_step / data['battery_capacity'] * 100
     data['battery_life'] -= BATTERY_LIFE_DEGRADATION_RATE
-    
+    # Calculate distance to next charging point and add to data
+    data['distance_to_charging_point'] = calculate_distance_to_next_station(data['location'])
+
     # Check if the current location is approaching a charging station and if charge is low
     if data['charge'] <= 30:
         next_station = next((station for station in CHARGING_STATIONS if station > data['location']), None)
@@ -54,11 +62,13 @@ def update_car_data_while_moving(data, distance_step):
             if data['charge'] >= charge_required_to_reach_station:
                 data['location'] = next_station
                 data['charging'] = True
+                data['car_status'] = "Charging"
             else:
                 distance_possible = data['charge'] / data['consumption'] * data['battery_capacity'] / 100
                 data['location'] += distance_possible
                 data['charge'] = 0
                 data['charging'] = False
+                data['car_status'] = "Moving"
 
     # Randomly increase or decrease the current speed
     speed_variation = 10 # km/h
@@ -86,19 +96,17 @@ def main():
 
     # Initial data
     data = {
-        'car_id': 'car13', # unique identifier for each car
-        'model': 'Model R', # car model
-        'current_speed': 65,  # km/h
-        'battery_capacity': 40,  # kWh  
-        'charge': 65,  # %  (percentage)
-        'consumption': 0.13,  # kWh/1 km  
-        'engine_power': 110,  # kW
-        'engine_torque': 230,  # Nm
-        'location': 400,  # km
-        'node': 'Node 4', # node the car is currently in
-        'charging': False, # whether the car is currently charging
-        'distance_covered': 0, # km
-        'battery_life': 90  # %, 100 being a brand new battery
+        'car_id': 'car13',
+        'model': 'Model M',
+        'current_speed': 89,
+        'battery_capacity': 49,
+        'charge': 89,
+        'consumption': 0.16,
+        'location': 3,
+        'car_status': "moving",  # can be "moving" or "charging"
+        'distance_covered': 0,
+        'battery_life': 89,
+        'distance_to_charging_point': calculate_distance_to_next_station(3)
     }
 
     time_step = 1 # minutes per time step
