@@ -1,6 +1,18 @@
 import csv
-from kafka import KafkaConsumer
 import json
+import joblib
+import numpy as np
+import tensorflow as tf
+from kafka import KafkaConsumer
+
+# Load Random Forest model
+rf_model = joblib.load('./random_forest_model_node_1.pkl')
+
+# Load Neural Network model
+nn_model = tf.keras.models.load_model('./neural_network_model_node_1.h5')
+
+# Load scaler object
+scaler = joblib.load('./scaler_node_1.pkl')
 
 def create_csv_writer(filename, columns):
     try:
@@ -18,6 +30,39 @@ def write_data_to_csv(writer, data, columns):
     except Exception as e:
         print(f"Error writing data to CSV: {e}")
         raise
+
+def process_data(data):
+    data['needs_charge'] = 1 if float(data['charge']) <= 50 else 0
+    features = [
+        float(data["current_speed"]),
+        float(data["battery_capacity"]),
+        float(data["charge"]),
+        float(data["consumption"]),
+        float(data["distance_covered"]),
+        float(data["battery_life"]),
+        float(data["distance_to_charging_point"]),
+        float(data["emergency_duration"])
+    ]
+    return features
+
+def predict_and_print(data):
+    try:
+        data['needs_charge'] = 1 if float(data['charge']) <= 50 else 0
+        features = process_data(data)
+        prediction_rf = predict_need_charge(rf_model, scaler, features)
+        prediction_nn = predict_need_charge(nn_model, scaler, features)
+        print(f"Random Forest Prediction: {prediction_rf}")
+        print(f"Neural Network Prediction: {prediction_nn}")
+    except Exception as e:
+        print(f"Error predicting data: {e}")
+        raise
+
+def predict_need_charge(model, scaler, features):
+    # scale the features
+    features_scaled = scaler.transform(np.array(features).reshape(1, -1))
+    # make prediction
+    prediction = model.predict(features_scaled)
+    return int(prediction.round())
 
 def start_consumer(topic_name, csv_filename):
     file = None
@@ -44,6 +89,7 @@ def start_consumer(topic_name, csv_filename):
                 print(f"Received data from {topic_name}: {data}")
                 write_data_to_csv(writer, data, columns)
                 file.flush()
+                predict_and_print(data)
         except KeyboardInterrupt:
             pass
     except Exception as e:
