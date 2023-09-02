@@ -4,15 +4,20 @@ import joblib
 import numpy as np
 import tensorflow as tf
 from kafka import KafkaConsumer
+import matplotlib.pyplot as plt
+
+# Global variables to keep track of total predictions and correct predictions
+total_predictions = 0
+correct_predictions = 0
 
 # Load Random Forest model
-rf_model = joblib.load('./random_forest_model_node_4.pkl')
+rf_model = joblib.load('/home/maith/Desktop/practical1/random_forest_model_node_4.pkl')
 
 # Load Neural Network model
-nn_model = tf.keras.models.load_model('./neural_network_model_node_4.h5')
+nn_model = tf.keras.models.load_model('/home/maith/Desktop/practical1/neural_network_model_node_4.h5')
 
 # Load scaler object
-scaler = joblib.load('./scaler_node_4.pkl')
+scaler = joblib.load('/home/maith/Desktop/practical1/scaler_node_4.pkl')
 
 def create_csv_writer(filename, columns):
     try:
@@ -43,9 +48,27 @@ def process_data(data):
         float(data["distance_to_charging_point"]),
         float(data["emergency_duration"])
     ]
+    # Create a copy of the DataFrame slice
+    X = X.copy()
+
+    # Display columns which contain 'inf' or '-inf' values
+    inf_columns = X.columns[X.isin([float('inf'), -float('inf')]).any()].tolist()
+    print(f"Columns with inf values: {inf_columns}")
+
+    # Replace 'inf' and '-inf' values in those columns with NaN
+    for col in inf_columns:
+        X[col].replace([float('inf'), -float('inf')], float('nan'), inplace=True)
+
+    # Optionally, fill NaN values with a specified value or method
+    # Here, we're replacing NaN with the mean of the column
+    for col in inf_columns:
+        X[col].fillna(X[col].mean(), inplace=True)
     return features
 
 def predict_and_print(data):
+    global total_predictions
+    global correct_predictions
+    
     try:
         data['needs_charge'] = 1 if float(data['charge']) <= 50 else 0
         features = process_data(data)
@@ -53,6 +76,22 @@ def predict_and_print(data):
         prediction_nn = predict_need_charge(nn_model, scaler, features)
         print(f"Random Forest Prediction: {prediction_rf}")
         print(f"Neural Network Prediction: {prediction_nn}")
+        
+        # Update total_predictions and correct_predictions
+        total_predictions += 1
+        if prediction_rf == data['needs_charge']:
+            correct_predictions += 1
+        
+        # Compute running accuracy
+        accuracy = correct_predictions / total_predictions
+        
+        # Update plot
+        plt.plot(total_predictions, accuracy, 'bo')
+        plt.xlabel('Total Predictions')
+        plt.ylabel('Accuracy')
+        plt.title('Model Accuracy Over Time')
+        plt.pause(0.05)
+        
     except Exception as e:
         print(f"Error predicting data: {e}")
         raise
@@ -99,4 +138,7 @@ def start_consumer(topic_name, csv_filename):
             file.close()
 
 if __name__ == "__main__":
+    plt.ion()  # Turn on interactive mode
     start_consumer('node4_data', 'node4_data.csv')
+    plt.ioff()  # Turn off interactive mode
+    plt.show()

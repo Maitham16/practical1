@@ -4,15 +4,20 @@ import joblib
 import numpy as np
 import tensorflow as tf
 from kafka import KafkaConsumer
+import matplotlib.pyplot as plt
+
+# Global variables to keep track of total predictions and correct predictions
+total_predictions = 0
+correct_predictions = 0
 
 # Load Random Forest model
-rf_model = joblib.load('./random_forest_model_node_1.pkl')
+rf_model = joblib.load('/home/maith/Desktop/practical1/random_forest_model_node_1.pkl')
 
 # Load Neural Network model
-nn_model = tf.keras.models.load_model('./neural_network_model_node_1.h5')
+nn_model = tf.keras.models.load_model('/home/maith/Desktop/practical1/neural_network_model_node_1.h5')
 
 # Load scaler object
-scaler = joblib.load('./scaler_node_1.pkl')
+scaler = joblib.load('/home/maith/Desktop/practical1/scaler_node_1.pkl')
 
 def create_csv_writer(filename, columns):
     try:
@@ -46,6 +51,9 @@ def process_data(data):
     return features
 
 def predict_and_print(data):
+    global total_predictions
+    global correct_predictions
+    
     try:
         data['needs_charge'] = 1 if float(data['charge']) <= 50 else 0
         features = process_data(data)
@@ -53,6 +61,22 @@ def predict_and_print(data):
         prediction_nn = predict_need_charge(nn_model, scaler, features)
         print(f"Random Forest Prediction: {prediction_rf}")
         print(f"Neural Network Prediction: {prediction_nn}")
+        
+        # Update total_predictions and correct_predictions
+        total_predictions += 1
+        if prediction_rf == data['needs_charge']:
+            correct_predictions += 1
+        
+        # Compute running accuracy
+        accuracy = correct_predictions / total_predictions
+        
+        # Update plot
+        plt.plot(total_predictions, accuracy, 'bo')
+        plt.xlabel('Total Predictions')
+        plt.ylabel('Accuracy')
+        plt.title('Model Accuracy Over Time')
+        plt.pause(0.05)
+        
     except Exception as e:
         print(f"Error predicting data: {e}")
         raise
@@ -99,4 +123,7 @@ def start_consumer(topic_name, csv_filename):
             file.close()
 
 if __name__ == "__main__":
+    plt.ion()  # Turn on interactive mode
     start_consumer('node1_data', 'node1_data.csv')
+    plt.ioff()  # Turn off interactive mode
+    plt.show()
