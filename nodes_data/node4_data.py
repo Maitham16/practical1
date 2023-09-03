@@ -48,9 +48,21 @@ def process_data(data):
         float(data["distance_to_charging_point"]),
         float(data["emergency_duration"])
     ]
-    # Handle inf values in the distance_to_charging_point column
-    if np.isinf(features[6]):
-        features[6] = np.nan  # Replace inf with NaN
+    # Create a copy of the DataFrame slice
+    X = X.copy()
+
+    # Display columns which contain 'inf' or '-inf' values
+    inf_columns = X.columns[X.isin([float('inf'), -float('inf')]).any()].tolist()
+    print(f"Columns with inf values: {inf_columns}")
+
+    # Replace 'inf' and '-inf' values in those columns with NaN
+    for col in inf_columns:
+        X[col].replace([float('inf'), -float('inf')], float('nan'), inplace=True)
+
+    # Optionally, fill NaN values with a specified value or method
+    # Here, we're replacing NaN with the mean of the column
+    for col in inf_columns:
+        X[col].fillna(X[col].mean(), inplace=True)
     return features
 
 def predict_and_print(data):

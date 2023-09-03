@@ -11,13 +11,13 @@ total_predictions = 0
 correct_predictions = 0
 
 # Load Random Forest model
-rf_model = joblib.load('/home/maith/Desktop/practical1/random_forest_model_node_4.pkl')
+rf_model = joblib.load('/home/maith/Desktop/practical1/random_forest_model_node_1.pkl')
 
 # Load Neural Network model
-nn_model = tf.keras.models.load_model('/home/maith/Desktop/practical1/neural_network_model_node_4.h5')
+nn_model = tf.keras.models.load_model('/home/maith/Desktop/practical1/neural_network_model_node_1.h5')
 
 # Load scaler object
-scaler = joblib.load('/home/maith/Desktop/practical1/scaler_node_4.pkl')
+scaler = joblib.load('/home/maith/Desktop/practical1/scaler_node_1.pkl')
 
 def create_csv_writer(filename, columns):
     try:
@@ -48,9 +48,6 @@ def process_data(data):
         float(data["distance_to_charging_point"]),
         float(data["emergency_duration"])
     ]
-    # Handle inf values in the distance_to_charging_point column
-    if np.isinf(features[6]):
-        features[6] = np.nan  # Replace inf with NaN
     return features
 
 def predict_and_print(data):
@@ -127,6 +124,6 @@ def start_consumer(topic_name, csv_filename):
 
 if __name__ == "__main__":
     plt.ion()  # Turn on interactive mode
-    start_consumer('node4_data', 'node4_data.csv')
+    start_consumer('node1_data', 'node1_data.csv')
     plt.ioff()  # Turn off interactive mode
     plt.show()
