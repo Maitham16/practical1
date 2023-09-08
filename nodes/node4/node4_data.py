@@ -26,14 +26,14 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 total_predictions = 0
 correct_predictions = 0
 training_batch = []
-nn_model = tf.keras.models.load_model('/home/maith/Desktop/practical1/neural_network_model_node_3.h5')
+nn_model = tf.keras.models.load_model('/home/maith/Desktop/practical1/neural_network_model_node_4.h5')
 
 # Check if the model is compiled, and if not, compile it
 if not nn_model.optimizer:
     nn_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
 # Load scaler for feature normalization
-scaler = joblib.load('/home/maith/Desktop/practical1/scaler_node_3.pkl')
+scaler = joblib.load('/home/maith/Desktop/practical1/scaler_node_4.pkl')
 model_lock = threading.Lock()
 prediction_lock = threading.Lock()
 accuracy_list = []
