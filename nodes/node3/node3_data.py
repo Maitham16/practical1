@@ -254,24 +254,32 @@ def exchange_model_with_server(local_model):
     logging.error("Failed to exchange model with server after maximum retries.")
     return None
 
+# Function to print model accuracy
+def print_model_accuracy():
+    with prediction_lock:
+        node_accuracy = correct_predictions / total_predictions if total_predictions > 0 else 0
+        print(f"Node accuracy: {node_accuracy:.2f}%")
+
 # Function for periodic model exchange with the server
 def periodic_model_exchange():
     global nn_model, correct_predictions, total_predictions
     while True:
-        time.sleep(300)  # Wait for a specified time interval (1 minute)
+        time.sleep(60)  # Wait for a specified time interval (1 minute)
         try:
+            print_model_accuracy()  # Before exchanging models
             updated_model = exchange_model_with_server(nn_model)
             if updated_model is None:
                 print("Model is None.")
             else:
                 # Sleep for 1 minute before applying the updated model
-                time.sleep(300)
+                time.sleep(5)
                 with model_lock:
                     nn_model = updated_model
 
                 # Reset prediction counters after model exchange
                 correct_predictions = 0
                 total_predictions = 0
+            print_model_accuracy()  # After exchanging models
         except Exception as e:
             print(f"Error during model exchange: {e}")
 

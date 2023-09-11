@@ -66,11 +66,11 @@ def aggregate_models_simple_average(models):
     global_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
 # Connection handler for each node
-def handle_client_connection(client_socket):
+def handle_client_connection(client_socket, client_address):
     global received_models, received_accuracies
 
     accuracy = float(client_socket.recv(1024).decode())
-    logger.info("Received accuracy: %s from client", accuracy)
+    logger.info("Received accuracy: %s from client %s", accuracy, client_address[0])
 
     # Step 1: Receive local model from the node
     data = receive_large_data(client_socket)
@@ -116,13 +116,13 @@ def handle_client_connection(client_socket):
     finally:
         client_socket.close()
 
-def send_global_model_to_node(client_socket):
+def send_global_model_to_node(client_socket, client_address):
     with tempfile.NamedTemporaryFile(delete=True) as tmp:
         with global_model_lock:  # Locking while accessing global_model
             global_model.save(tmp.name, save_format="h5")
         serialized_model = tmp.read()
 
-        logger.info("Sending global model to node")
+        logger.info("Sending global model to node (%s)", client_address[0])
         send_large_data(client_socket, serialized_model)
         
         # Close the connection after sending
@@ -140,7 +140,7 @@ if __name__ == "__main__":
             while True:
                 client_socket, client_address = s.accept()
                 logger.info("Accepted connection from %s:%s", client_address[0], client_address[1])
-                threading.Thread(target=handle_client_connection, args=(client_socket,)).start()
+                threading.Thread(target=handle_client_connection, args=(client_socket, client_address)).start()
 
     # This thread will send the aggregated model back to nodes.
     def send_thread():
@@ -151,7 +151,7 @@ if __name__ == "__main__":
 
             while True:
                 client_socket, client_address = send_socket.accept()
-                threading.Thread(target=send_global_model_to_node, args=(client_socket,)).start()
+                threading.Thread(target=send_global_model_to_node, args=(client_socket, client_address)).start()
 
     # Start both threads.
     threading.Thread(target=receive_thread).start()
