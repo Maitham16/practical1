@@ -1,112 +1,158 @@
-import numpy as np
-import torch
-import torch.nn as nn
 import socket
-import pickle
-import argparse
+import threading
+import tensorflow as tf
+import tempfile
+import struct
+import numpy as np
+from tensorflow.keras import layers
+from tensorflow.keras import regularizers
 import logging
-import time
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
+# Setting up logging
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] - [%(levelname)s] - %(message)s')
+logger = logging.getLogger(__name__)
 
-# Parse command-line arguments
-parser = argparse.ArgumentParser(description='Central server for federated learning.')
-parser.add_argument('--num_nodes', type=int, default=2, help='Number of local nodes')
-parser.add_argument('--num_rounds', type=int, default=10, help='Number of communication rounds')
-args = parser.parse_args()
+# Define constants
+SERVER_HOST = 'localhost'
+SERVER_PORT = 12345
+SERVER_SEND_PORT = 12346
+NUM_NODES = 4
+AGGREGATION_THRESHOLD = 4
 
-NUM_LOCAL_NODES = args.num_nodes
-NUM_ROUNDS = args.num_rounds
+def create_blank_model():
+    model = tf.keras.models.Sequential([
+        layers.Dense(12, activation='relu', kernel_regularizer=regularizers.l2(0.01), input_shape=(8,)),  # L2 regularization
+        layers.Dense(8, activation='relu', kernel_regularizer=regularizers.l2(0.01)),  # L2 regularization
+        layers.Dense(1, activation='sigmoid')
+    ])
+    return model
 
-# Initialize global model
-def initialize_model():
-    logging.info('Initializing global model')
-    class Net(nn.Module):
-        def __init__(self):
-            super(Net, self).__init__()
-            self.fc1 = nn.Linear(28 * 28, 200)
-            self.fc2 = nn.Linear(200, 10)
+# Initialize the global model
+global_model = create_blank_model()
+global_model_lock = threading.Lock()
+received_models_lock = threading.Lock() 
+received_models = []
+received_accuracies = []
 
-        def forward(self, x):
-            x = torch.relu(self.fc1(x))
-            x = self.fc2(x)
-            return x
+# The utility functions from your node script:
+def send_large_data(sock, data):
+    data_size = len(data)
+    sock.sendall(struct.pack('!I', data_size))
+    sock.sendall(data)
 
-    global_model = Net()
-    return global_model
+# Function to receive large data from a socket
+def receive_large_data(sock):
+    data_size = struct.unpack('!I', sock.recv(4))[0]
+    received_data = b''
+    while len(received_data) < data_size:
+        more_data = sock.recv(data_size - len(received_data))
+        if not more_data:
+            raise ValueError("Received less data than expected!")
+        received_data += more_data
+    return received_data
 
-# Receive model updates from local nodes
-def receive_local_updates():
-    logging.info('Receiving local updates')
-    local_updates = []
+# Function to aggregate the local models into the global model
+def aggregate_models_simple_average(models):
+    """Aggregate weights from multiple models using a simple average."""
+    reference_weights = models[0].get_weights()
+    averaged_weights = []
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('localhost', 12345))
-        s.listen()
+    for i in range(len(reference_weights)):
+        layer_weights_list = np.array([model.get_weights()[i] for model in models])
+        averaged_weights.append(np.mean(layer_weights_list, axis=0))
 
-        for _ in range(NUM_LOCAL_NODES):
-            conn, addr = s.accept()
-            with conn:
-                print('Connected by', addr)
-                data = b''
-                while True:
-                    packet = conn.recv(4096)
-                    if not packet:
-                        break
-                    data += packet
-                local_update = pickle.loads(data)
-                local_updates.append(local_update)
+    with global_model_lock:
+        global_model.set_weights(averaged_weights)
+    global_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
-    return local_updates
+# Connection handler for each node
+def handle_client_connection(client_socket, client_address):
+    global received_models, received_accuracies
 
-# Aggregate local updates
-def aggregate_updates(local_updates):
-    logging.info('Aggregating local updates')
-    aggregated_updates = np.mean(local_updates, axis=0)
-    return aggregated_updates
+    accuracy = float(client_socket.recv(1024).decode())
+    logger.info("Received accuracy: %s from client %s", accuracy, client_address[0])
 
-# Update global model
-def update_global_model(global_model, aggregated_updates):
-    logging.info('Updating global model')
-    for param, update in zip(global_model.parameters(), aggregated_updates):
-        param.data = torch.Tensor(update)
-    return global_model
+    # Step 1: Receive local model from the node
+    data = receive_large_data(client_socket)
+    with tempfile.NamedTemporaryFile(delete=True) as tmp_file:
+        tmp_file.write(data)
+        local_model = tf.keras.models.load_model(tmp_file.name, compile=False)
+        local_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
-# Broadcast global model
-def send_global_model(global_model):
-    logging.info('Broadcasting global model')
-    serialized_model = pickle.dumps(global_model)
+        logger.info("Received local model from client")
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('localhost', 12346))
-        s.listen()
+        with received_models_lock:  # Locking while updating received_models and received_accuracies
+            received_models.append(local_model)
+            received_accuracies.append(accuracy)  # Store the accuracy
+            all_models_received = len(received_models) == NUM_NODES
 
-        for _ in range(NUM_LOCAL_NODES):
-            conn, addr = s.accept()
-            with conn:
-                print('Connected by', addr)
-                conn.sendall(serialized_model)
+    if len(received_models) == AGGREGATION_THRESHOLD:
+        with received_models_lock:  # Locking while accessing received_models
+            logger.info("All models received. Aggregating...")
+            aggregate_models_simple_average(received_models)
+            received_models = []
+            received_accuracies = []
+            logger.info("Aggregation complete.")
 
-# Main function
-def main():
-    global_model = initialize_model()
+        # summary of the aggregated model
+        with global_model_lock:
+            global_model.summary(print_fn=logger.info)
 
-    for round in range(NUM_ROUNDS):
-        logging.info(f'Starting communication round {round+1}/{NUM_ROUNDS}')
+        # Now send the updated global model back to all nodes
+        with tempfile.NamedTemporaryFile(delete=True) as tmp:
+            with global_model_lock:  # Locking while accessing global_model
+                global_model.save(tmp.name, save_format="h5")
+            serialized_model = tmp.read()
+            
+            logger.info("Sending aggregated global model to node")
+            send_large_data(client_socket, serialized_model)
+    
+    # Send a READY confirmation back to the node
+    try:
+        client_socket.send("READY".encode())
+        logger.info("Sent READY confirmation to client")
+    except ConnectionResetError:
+        logger.error("Connection was reset by client.")
+    finally:
+        client_socket.close()
+
+def send_global_model_to_node(client_socket, client_address):
+    with tempfile.NamedTemporaryFile(delete=True) as tmp:
+        with global_model_lock:  # Locking while accessing global_model
+            global_model.save(tmp.name, save_format="h5")
+        serialized_model = tmp.read()
+
+        logger.info("Sending global model to node (%s)", client_address[0])
+        send_large_data(client_socket, serialized_model)
         
-        # 1. Receive model updates
-        local_updates = receive_local_updates()
-        
-        # 2. Aggregate and update the global model
-        aggregated_updates = aggregate_updates(local_updates)
-        global_model = update_global_model(global_model, aggregated_updates)
-        
-        # 3. Wait for a minute
-        time.sleep(60)
-        
-        # 4. Broadcast the updated global model to all nodes
-        send_global_model(global_model)
+        # Close the connection after sending
+        client_socket.close()
 
+# Main function to start the server...
 if __name__ == "__main__":
-    main()
+    # This thread will listen for incoming models from nodes.
+    def receive_thread():
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((SERVER_HOST, SERVER_PORT))
+            s.listen()
+            logger.info("Server listening for incoming models on %s:%s", SERVER_HOST, SERVER_PORT)
+
+            while True:
+                client_socket, client_address = s.accept()
+                logger.info("Accepted connection from %s:%s", client_address[0], client_address[1])
+                threading.Thread(target=handle_client_connection, args=(client_socket, client_address)).start()
+
+    # This thread will send the aggregated model back to nodes.
+    def send_thread():
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as send_socket:
+            send_socket.bind((SERVER_HOST, SERVER_SEND_PORT))
+            send_socket.listen()
+            logger.info("Server ready to send global models on %s:%s", SERVER_HOST, SERVER_SEND_PORT)
+
+            while True:
+                client_socket, client_address = send_socket.accept()
+                threading.Thread(target=send_global_model_to_node, args=(client_socket, client_address)).start()
+
+    # Start both threads.
+    threading.Thread(target=receive_thread).start()
+    threading.Thread(target=send_thread).start()
