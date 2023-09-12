@@ -22,7 +22,7 @@ central_server_producer = KafkaProducer(
 )
 
 # Define constants
-BATCH_SIZE = 100
+BATCH_SIZE = 1000
 SERVER_HOST = 'localhost'
 SERVER_PORT = 12345
 SERVER_SEND_PORT = 12346
@@ -35,6 +35,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 total_predictions = 0
 correct_predictions = 0
 training_batch = []
+accumulated_records = []
 nn_model = tf.keras.models.load_model('/home/maith/Desktop/practical1/neural_network_model_node_4.h5')
 
 # Check if the model is compiled, and if not, compile it
@@ -273,7 +274,7 @@ def print_model_accuracy():
 def periodic_model_exchange():
     global nn_model, correct_predictions, total_predictions
     while True:
-        time.sleep(60)  # Wait for a specified time interval (1 minute)
+        time.sleep360  # Wait for a specified time interval (1 minute)
         try:
             print_model_accuracy()  # Before exchanging models
             updated_model = exchange_model_with_server(nn_model)
@@ -301,11 +302,10 @@ def send_accumulated_data_to_server():
                 central_server_producer.send(KAFKA_TOPIC_TO_SERVER, value=record)
             central_server_producer.flush()
             logging.info(f"Sent {len(accumulated_records)} records to the central server via Kafka.")
-            accumulated_records = []  # Clear the accumulated records after sending
+            accumulated_records = []
     except Exception as e:
         logging.error(f"Failed to send data to the central server via Kafka: {e}")
 
-# Function to consume messages from a Kafka topic and send them to the central server
 def consume_kafka_messages_and_send_to_server(topic_name):
     try:
         consumer = KafkaConsumer(
@@ -319,13 +319,15 @@ def consume_kafka_messages_and_send_to_server(topic_name):
             data = msg.value
             print(f"Received from {topic_name}: {data}")
             
-            # Send the received data to the central server
-            send_data_to_server(data)
+            # Append the received data to accumulated_records
+            accumulated_records.append(data)
+
+            if len(accumulated_records) >= BATCH_SIZE:
+                send_accumulated_data_to_server()
 
     except Exception as e:
         print(f"Kafka consumption error: {e}")
 
-# Function to send data to the central server over a socket
 # Function to send data to the central server
 def send_data_to_server(data):
     global accumulated_records
