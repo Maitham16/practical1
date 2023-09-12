@@ -1,10 +1,15 @@
+import csv
+import json
 import socket
 import threading
+from kafka import KafkaConsumer
+import tensorflow as tf
 import tempfile
 import struct
-from sklearn.ensemble import RandomForestClassifier
+import numpy as np
+from tensorflow.keras import layers
+from tensorflow.keras import regularizers
 import logging
-import joblib
 
 # Setting up logging
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] - [%(levelname)s] - %(message)s')
@@ -14,17 +19,39 @@ logger = logging.getLogger(__name__)
 SERVER_HOST = 'localhost'
 SERVER_PORT = 12345
 SERVER_SEND_PORT = 12346
+BROKER_ADDRESS = 'localhost:9092'
+KAFKA_TOPIC = ['node1_server_data', 'node2_server_data', 'node3_server_data', 'node4_server_data']
 NUM_NODES = 4
 AGGREGATION_THRESHOLD = 4
 
+def save_data_to_csv(data):
+    # Name of the CSV file where data is saved
+    CSV_FILE_NAME = "central_server_data.csv"
+    
+    columns = [
+        "timestamp", "car_id", "model", "current_speed", "battery_capacity",
+        "charge", "consumption", "location", "node", "car_status",
+        "distance_covered", "battery_life", "distance_to_charging_point",
+        "weather", "traffic", "road_gradient", "emergency", "emergency_duration"
+    ]
+
+    # Append data to the CSV
+    with open(CSV_FILE_NAME, 'a', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([data[col] for col in columns])
 
 def create_blank_model():
-    return RandomForestClassifier()
+    model = tf.keras.models.Sequential([
+        layers.Dense(12, activation='relu', kernel_regularizer=regularizers.l2(0.01), input_shape=(8,)),  # L2 regularization
+        layers.Dense(8, activation='relu', kernel_regularizer=regularizers.l2(0.01)),  # L2 regularization
+        layers.Dense(1, activation='sigmoid')
+    ])
+    return model
 
 # Initialize the global model
 global_model = create_blank_model()
 global_model_lock = threading.Lock()
-received_models_lock = threading.Lock()
+received_models_lock = threading.Lock() 
 received_models = []
 received_accuracies = []
 
@@ -46,22 +73,19 @@ def receive_large_data(sock):
     return received_data
 
 # Function to aggregate the local models into the global model
-def aggregate_rf_models(models):
-    """Combine trees from multiple Random Forest models."""
-    logger.info("Aggregating Random Forest models...")
+def aggregate_models_simple_average(models):
+    """Aggregate weights from multiple models using a simple average."""
+    reference_weights = models[0].get_weights()
+    averaged_weights = []
 
-    all_estimators = []
-    for model in models:
-        if hasattr(model, 'estimators_'):
-            all_estimators.extend(model.estimators_)
-        else:
-            logger.warning("A provided model does not have estimators_ attribute. It might be an unfit model or not a Random Forest.")
+    for i in range(len(reference_weights)):
+        layer_weights_list = np.array([model.get_weights()[i] for model in models])
+        averaged_weights.append(np.mean(layer_weights_list, axis=0))
 
     with global_model_lock:
-        global_model.estimators_ = all_estimators
-        global_model.n_estimators = len(all_estimators)
-        logger.info("Aggregated model now has %d trees", global_model.n_estimators)
-        
+        global_model.set_weights(averaged_weights)
+    global_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
 # Connection handler for each node
 def handle_client_connection(client_socket, client_address):
     global received_models, received_accuracies
@@ -73,36 +97,38 @@ def handle_client_connection(client_socket, client_address):
     data = receive_large_data(client_socket)
     with tempfile.NamedTemporaryFile(delete=True) as tmp_file:
         tmp_file.write(data)
-        local_model = joblib.load(tmp_file.name)
+        local_model = tf.keras.models.load_model(tmp_file.name, compile=False)
+        local_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
         logger.info("Received local model from client")
 
-        with received_models_lock:
+        with received_models_lock:  # Locking while updating received_models and received_accuracies
             received_models.append(local_model)
-            received_accuracies.append(accuracy)
+            received_accuracies.append(accuracy)  # Store the accuracy
             all_models_received = len(received_models) == NUM_NODES
 
     if len(received_models) == AGGREGATION_THRESHOLD:
-        with received_models_lock:
+        with received_models_lock:  # Locking while accessing received_models
             logger.info("All models received. Aggregating...")
-            aggregate_rf_models(received_models)
+            aggregate_models_simple_average(received_models)
             received_models = []
             received_accuracies = []
             logger.info("Aggregation complete.")
 
-        # summary of the aggregated model's importances
+        # summary of the aggregated model
         with global_model_lock:
-            logger.info("Feature importances: %s", global_model.feature_importances_)
+            global_model.summary(print_fn=logger.info)
 
         # Now send the updated global model back to all nodes
         with tempfile.NamedTemporaryFile(delete=True) as tmp:
-            with global_model_lock:
-                joblib.dump(global_model, tmp.name)
+            with global_model_lock:  # Locking while accessing global_model
+                global_model.save(tmp.name, save_format="h5")
             serialized_model = tmp.read()
-
+            
             logger.info("Sending aggregated global model to node")
             send_large_data(client_socket, serialized_model)
-
+    
+    # Send a READY confirmation back to the node
     try:
         client_socket.send("READY".encode())
         logger.info("Sent READY confirmation to client")
@@ -113,18 +139,34 @@ def handle_client_connection(client_socket, client_address):
 
 def send_global_model_to_node(client_socket, client_address):
     with tempfile.NamedTemporaryFile(delete=True) as tmp:
-        with global_model_lock:
-            joblib.dump(global_model, tmp.name)
+        with global_model_lock:  # Locking while accessing global_model
+            global_model.save(tmp.name, save_format="h5")
         serialized_model = tmp.read()
 
         logger.info("Sending global model to node (%s)", client_address[0])
         send_large_data(client_socket, serialized_model)
-
+        
         # Close the connection after sending
         client_socket.close()
 
+def consume_data_from_kafka():
+    consumer = KafkaConsumer(
+            *KAFKA_TOPIC,
+            bootstrap_servers=BROKER_ADDRESS,
+            value_deserializer=lambda v: json.loads(v.decode('utf-8')),
+            auto_offset_reset='earliest'
+        )
+
+    for msg in consumer:
+        data = msg.value
+        print(f"Received data: {data}")
+        save_data_to_csv(data)
+        
+# Main function to start the server...
 if __name__ == "__main__":
+    # This thread will listen for incoming models from nodes.
     def receive_thread():
+        consume_data_from_kafka()
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind((SERVER_HOST, SERVER_PORT))
             s.listen()
@@ -135,6 +177,7 @@ if __name__ == "__main__":
                 logger.info("Accepted connection from %s:%s", client_address[0], client_address[1])
                 threading.Thread(target=handle_client_connection, args=(client_socket, client_address)).start()
 
+    # This thread will send the aggregated model back to nodes.
     def send_thread():
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as send_socket:
             send_socket.bind((SERVER_HOST, SERVER_SEND_PORT))
@@ -145,5 +188,6 @@ if __name__ == "__main__":
                 client_socket, client_address = send_socket.accept()
                 threading.Thread(target=send_global_model_to_node, args=(client_socket, client_address)).start()
 
+    # Start both threads.
     threading.Thread(target=receive_thread).start()
     threading.Thread(target=send_thread).start()

@@ -12,12 +12,21 @@ import matplotlib.pyplot as plt
 import struct 
 import pandas as pd
 import tempfile
+from kafka import KafkaProducer
+from kafka.errors import KafkaError
+
+# Initialize Kafka producer for sending data to the central server
+central_server_producer = KafkaProducer(
+    bootstrap_servers='localhost:9092',
+    value_serializer=lambda v: json.dumps(v).encode('utf-8')
+)
 
 # Define constants
-BATCH_SIZE = 1000
+BATCH_SIZE = 100
 SERVER_HOST = 'localhost'
 SERVER_PORT = 12345
 SERVER_SEND_PORT = 12346
+KAFKA_TOPIC_TO_SERVER = 'node1_server_data' 
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -283,29 +292,48 @@ def periodic_model_exchange():
         except Exception as e:
             print(f"Error during model exchange: {e}")
 
-# Function to send data continuously to the central server
-def send_data_continuously():
-    while True:
-        # Create a dictionary containing the data you want to send
-        data_to_send = {
-            "timestamp": time.time(),  # Add relevant data here
-            "current_speed": 55.5,  # Add relevant data here
-            "battery_capacity": 80.0,  # Add relevant data here
-            # Add more data fields as needed
-        }
+# Function to send accumulated data to the central server via Kafka
+def send_accumulated_data_to_server():
+    global accumulated_records
+    try:
+        if accumulated_records:
+            for record in accumulated_records:
+                central_server_producer.send(KAFKA_TOPIC_TO_SERVER, value=record)
+            central_server_producer.flush()
+            logging.info(f"Sent {len(accumulated_records)} records to the central server via Kafka.")
+            accumulated_records = []  # Clear the accumulated records after sending
+    except Exception as e:
+        logging.error(f"Failed to send data to the central server via Kafka: {e}")
 
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.connect((SERVER_HOST, SERVER_SEND_PORT))
-                data_json = json.dumps(data_to_send)
-                s.sendall(data_json.encode())
-                logging.info("Sent data to the central server.")
-        except Exception as e:
-            logging.error(f"Failed to send data to the central server: {e}")
+# Function to consume messages from a Kafka topic and send them to the central server
+def consume_kafka_messages_and_send_to_server(topic_name):
+    try:
+        consumer = KafkaConsumer(
+            topic_name,
+            bootstrap_servers='localhost:9092',
+            value_deserializer=lambda v: json.loads(v.decode('utf-8')),
+            auto_offset_reset='earliest'
+        )
 
-        # Adjust the sleep interval according to your requirements
-        time.sleep(10)  # Send data every 10 seconds
-        
+        for _, msg in enumerate(consumer):
+            data = msg.value
+            print(f"Received from {topic_name}: {data}")
+            
+            # Send the received data to the central server
+            send_data_to_server(data)
+
+    except Exception as e:
+        print(f"Kafka consumption error: {e}")
+
+# Function to send data to the central server over a socket
+# Function to send data to the central server
+def send_data_to_server(data):
+    global accumulated_records
+    accumulated_records.append(data)
+
+    if len(accumulated_records) >= BATCH_SIZE:
+        send_accumulated_data_to_server()
+
 # Function to consume messages from a Kafka topic
 def consume_kafka_messages(topic_name):
     print("Starting Kafka consumer...")
@@ -327,9 +355,9 @@ def consume_kafka_messages(topic_name):
 
 # Main execution
 if __name__ == "__main__":
-    data_send_thread = threading.Thread(target=send_data_continuously)
+    data_send_thread = threading.Thread(target=consume_kafka_messages_and_send_to_server, args=('node1_data',))
     data_send_thread.start()
-    
+
     model_thread = threading.Thread(target=periodic_model_exchange)
     model_thread.start()
     plt.ion()
