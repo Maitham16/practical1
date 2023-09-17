@@ -85,12 +85,13 @@ def send_global_model_to_node(client_socket, client_address):
     with tempfile.NamedTemporaryFile(delete=True) as tmp:
         with global_model_lock:  # Locking while accessing global_model
             global_model.save(tmp.name, save_format="h5")
-        serialized_model = tmp.read()
+            serialized_model = tmp.read()
 
         logger.info("Sending global model to node (%s)", client_address[0])
-        send_large_data(client_socket, serialized_model)
-        
-        # Close the connection after sending
+        try:
+            send_large_data(client_socket, serialized_model)
+        except BrokenPipeError:
+            print("Client disconnected before data could be sent.")
         client_socket.close()
 
 def process_data(row):
@@ -220,10 +221,10 @@ def handle_client_connection(client_socket, client_address):
             with received_models_lock: 
                 received_models.append(local_model)
                 received_accuracies.append(accuracy)
-                all_models_received = len(received_models) == NUM_NODES
+                all_models_received = len(received_models)
 
         # Aggregating
-        if all_models_received:
+        if all_models_received == 4:
             with received_models_lock:
                 logger.info("All models received. Aggregating...")
                 aggregate_models_federated_averaging(received_models, received_accuracies)
@@ -233,14 +234,6 @@ def handle_client_connection(client_socket, client_address):
 
             # Training the aggregated global model
             train_global_model()
-
-            # Send the trained aggregated model
-            with tempfile.NamedTemporaryFile(delete=True) as tmp:
-                global_model.save(tmp.name, save_format="h5")
-            serialized_model = tmp.read()
-
-            logger.info("Sending trained aggregated global model to node")
-            send_large_data(client_socket, serialized_model)
 
         print("About to send READY confirmation to client")
         client_socket.send("READY".encode())

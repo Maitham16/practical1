@@ -22,11 +22,11 @@ central_server_producer = KafkaProducer(
 )
 
 # Define constants
-BATCH_SIZE = 1000
+BATCH_SIZE = 2500
 SERVER_HOST = 'localhost'
 SERVER_PORT = 12345
 SERVER_SEND_PORT = 12346
-KAFKA_TOPIC_TO_SERVER = 'node2_server_data' 
+KAFKA_TOPIC_TO_SERVER = 'node1_server_data' 
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -135,7 +135,7 @@ def predict_and_update(data):
     ]
 
     try:
-        with open('node2_data.csv', 'a', newline='') as file:
+        with open('node1_data.csv', 'a', newline='') as file:
             writer = csv.writer(file)
             write_data_to_csv(writer, data, columns)
     except Exception as e:
@@ -274,7 +274,7 @@ def print_model_accuracy():
 def periodic_model_exchange():
     global nn_model, correct_predictions, total_predictions
     while True:
-        time.sleep360  # Wait for a specified time interval (1 minute)
+        time.sleep(120)  
         try:
             print_model_accuracy()  # Before exchanging models
             updated_model = exchange_model_with_server(nn_model)
@@ -357,10 +357,10 @@ def consume_kafka_messages(topic_name):
 
 # Main execution
 if __name__ == "__main__":
-    data_send_thread = threading.Thread(target=consume_kafka_messages_and_send_to_server, args=('node2_data',))
+    data_send_thread = threading.Thread(target=consume_kafka_messages_and_send_to_server, args=('node1_data',))
     data_send_thread.start()
 
     model_thread = threading.Thread(target=periodic_model_exchange)
     model_thread.start()
     plt.ion()
-    consume_kafka_messages('node2_data')
+    consume_kafka_messages('node1_data')

@@ -22,7 +22,7 @@ central_server_producer = KafkaProducer(
 )
 
 # Define constants
-BATCH_SIZE = 1000
+BATCH_SIZE = 2500
 SERVER_HOST = 'localhost'
 SERVER_PORT = 12345
 SERVER_SEND_PORT = 12346
@@ -274,7 +274,7 @@ def print_model_accuracy():
 def periodic_model_exchange():
     global nn_model, correct_predictions, total_predictions
     while True:
-        time.sleep360  # Wait for a specified time interval (1 minute)
+        time.sleep(120)  
         try:
             print_model_accuracy()  # Before exchanging models
             updated_model = exchange_model_with_server(nn_model)

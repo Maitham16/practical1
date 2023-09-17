@@ -22,11 +22,12 @@ central_server_producer = KafkaProducer(
 )
 
 # Define constants
-BATCH_SIZE = 1000
+BATCH_SIZE = 2500
 SERVER_HOST = 'localhost'
 SERVER_PORT = 12345
 SERVER_SEND_PORT = 12346
-KAFKA_TOPIC_TO_SERVER = 'node1_server_data' 
+KAFKA_TOPIC_TO_SERVER = 'node1_server_data'
+TIME_INTERVAL = 60
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -270,14 +271,16 @@ def print_model_accuracy():
         node_accuracy = correct_predictions / total_predictions if total_predictions > 0 else 0
         print(f"Node accuracy: {node_accuracy:.2f}%")
 
+
 # Function for periodic model exchange with the server
 def periodic_model_exchange():
     global nn_model, correct_predictions, total_predictions
     while True:
-        time.sleep(360)  # Wait for a specified time interval (1 minute)
+        time.sleep(TIME_INTERVAL)  
         try:
             print_model_accuracy()  # Before exchanging models
             updated_model = exchange_model_with_server(nn_model)
+            TIME_INTERVAL = 600
             if updated_model is None:
                 print("Model is None.")
             else:

@@ -22,7 +22,7 @@ central_server_producer = KafkaProducer(
 )
 
 # Define constants
-BATCH_SIZE = 1000
+BATCH_SIZE = 2500
 SERVER_HOST = 'localhost'
 SERVER_PORT = 12345
 SERVER_SEND_PORT = 12346
@@ -36,14 +36,14 @@ total_predictions = 0
 correct_predictions = 0
 training_batch = []
 accumulated_records = []
-nn_model = tf.keras.models.load_model('/home/maith/Desktop/practical1/neural_network_model_node_1.h5')
+nn_model = tf.keras.models.load_model('/home/maith/Desktop/practical1/neural_network_model_node_3.h5')
 
 # Check if the model is compiled, and if not, compile it
 if not nn_model.optimizer:
     nn_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
 # Load scaler for feature normalization
-scaler = joblib.load('/home/maith/Desktop/practical1/scaler_node_1.pkl')
+scaler = joblib.load('/home/maith/Desktop/practical1/scaler_node_3.pkl')
 model_lock = threading.Lock()
 prediction_lock = threading.Lock()
 accuracy_list = []
@@ -274,7 +274,7 @@ def print_model_accuracy():
 def periodic_model_exchange():
     global nn_model, correct_predictions, total_predictions
     while True:
-        time.sleep360  # Wait for a specified time interval (1 minute)
+        time.sleep(120)  
         try:
             print_model_accuracy()  # Before exchanging models
             updated_model = exchange_model_with_server(nn_model)
