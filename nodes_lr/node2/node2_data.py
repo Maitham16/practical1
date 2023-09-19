@@ -29,7 +29,7 @@ SERVER_HOST = 'localhost'
 SERVER_PORT = 12345
 SERVER_SEND_PORT = 12346
 KAFKA_TOPIC_TO_SERVER = 'node2_server_data'
-TIME_INTERVAL = 100
+TIME_INTERVAL = 30
 RETRAIN_INTERVAL = 60
 
 # Initialize logging
@@ -303,7 +303,7 @@ def exchange_model_with_server(local_model):
                 logging.info(f"Successfully connected to the server at {SERVER_HOST}:{SERVER_PORT}")
 
                 logging.info("Sending local model's accuracy to the server...")
-                s.sendall(accuracy_str.encode())
+                s.sendall(accuracy_str.encode('utf-8'))
                 time.sleep(0.5)
 
                 logging.info("Sending local model to the server...")
@@ -331,6 +331,7 @@ def exchange_model_with_server(local_model):
 
                 with tempfile.NamedTemporaryFile(delete=True, suffix='.pkl') as tmp_file:
                     tmp_file.write(data)
+                    tmp_file.flush()
                     updated_model = joblib.load(tmp_file.name)
 
                 logging.info("Received global model.")
