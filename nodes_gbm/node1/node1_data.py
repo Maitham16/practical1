@@ -29,8 +29,8 @@ SERVER_HOST = 'localhost'
 SERVER_PORT = 12345
 SERVER_SEND_PORT = 12346
 KAFKA_TOPIC_TO_SERVER = 'node1_server_data'
-TIME_INTERVAL = 120
-RETRAIN_INTERVAL = 60
+TIME_INTERVAL = 60
+RETRAIN_INTERVAL = 100
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -218,7 +218,8 @@ def predict_and_update(data):
         with model_lock:
             prediction_gbm = predict_need_charge(gbm_model, scaler, features)
 
-        print(f"Prediction: {prediction_gbm}")
+        # print prediction
+        logging.info(f"Prediction: {prediction_gbm}")
 
         with prediction_lock:
             total_predictions += 1
@@ -229,6 +230,8 @@ def predict_and_update(data):
             if len(training_batch) == BATCH_SIZE:
                 retrain_model(training_batch)
                 training_batch = []
+        # print accuracy
+        logging.info(f"Accuracy: {correct_predictions / total_predictions * 100:.2f}%")
 
     except Exception as e:
         print(f"Error in prediction and update process: {e}")
@@ -309,17 +312,12 @@ def exchange_model_with_server(local_model):
                 # Send an acknowledgment after successful receipt
                 s.sendall("ACK".encode())
 
-                with tempfile.NamedTemporaryFile(delete=True) as tmp_file:
+                with tempfile.NamedTemporaryFile(delete=True, suffix='.pkl') as tmp_file:
                     tmp_file.write(data)
-                    updated_model = tf.keras.models.load_model(tmp_file.name, compile=False)
+                    updated_model = joblib.load(tmp_file.name)
 
-                updated_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-
-                # Log details about the received model
                 logging.info("Received global model.")
-                logging.info(f"Model summary: {updated_model.summary()}")
-                logging.info(f"Number of layers in model: {len(updated_model.layers)}")
-                logging.info(f"Number of trainable parameters: {updated_model.count_params()}")
+                # Additional logging about the model can be added if needed
 
                 return updated_model
 

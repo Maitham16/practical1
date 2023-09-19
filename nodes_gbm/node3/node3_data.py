@@ -28,9 +28,9 @@ BATCH_SIZE = 2500
 SERVER_HOST = 'localhost'
 SERVER_PORT = 12345
 SERVER_SEND_PORT = 12346
-KAFKA_TOPIC_TO_SERVER = 'node3_server_data'
-TIME_INTERVAL = 120
-RETRAIN_INTERVAL = 60
+KAFKA_TOPIC_TO_SERVER = 'node4_server_data'
+TIME_INTERVAL = 60
+RETRAIN_INTERVAL = 100
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -40,10 +40,10 @@ total_predictions = 0
 correct_predictions = 0
 training_batch = []
 accumulated_records = []
-gbm_model = joblib.load('/home/maith/Desktop/practical1/models/gbm_model_node3.pkl')
+gbm_model = joblib.load('/home/maith/Desktop/practical1/models/gbm_model_node4.pkl')
 
 # Load scaler for feature normalization
-scaler = joblib.load('/home/maith/Desktop/practical1/models/gbm_scaler_node3.pkl')
+scaler = joblib.load('/home/maith/Desktop/practical1/models/gbm_scaler_node4.pkl')
 model_lock = threading.Lock()
 prediction_lock = threading.Lock()
 accuracy_list = []
@@ -154,7 +154,7 @@ def preprocess_single_row(data_row):
 
 def load_and_preprocess_data():
     """ Load the last 15000 records from the CSV file and preprocess them. """
-    data = pd.read_csv('/home/maith/Desktop/practical1/nodes_gbm/node3/node3_data.csv')
+    data = pd.read_csv('/home/maith/Desktop/practical1/nodes_gbm/node4/node4_data.csv')
     print(data.columns)
     last_15000_records = data.tail(15000)
     
@@ -203,8 +203,8 @@ def predict_and_update(data):
     ]
 
     try:
-        write_header = not os.path.exists('node3_data.csv') 
-        with open('node3_data.csv', 'a', newline='') as file:
+        write_header = not os.path.exists('node4_data.csv') 
+        with open('node4_data.csv', 'a', newline='') as file:
             writer = csv.writer(file)
             if write_header:
                 writer.writerow(columns)
@@ -218,7 +218,8 @@ def predict_and_update(data):
         with model_lock:
             prediction_gbm = predict_need_charge(gbm_model, scaler, features)
 
-        print(f"Prediction: {prediction_gbm}")
+        # print prediction
+        logging.info(f"Prediction: {prediction_gbm}")
 
         with prediction_lock:
             total_predictions += 1
@@ -229,6 +230,8 @@ def predict_and_update(data):
             if len(training_batch) == BATCH_SIZE:
                 retrain_model(training_batch)
                 training_batch = []
+        # print accuracy
+        logging.info(f"Accuracy: {correct_predictions / total_predictions * 100:.2f}%")
 
     except Exception as e:
         print(f"Error in prediction and update process: {e}")
@@ -309,17 +312,12 @@ def exchange_model_with_server(local_model):
                 # Send an acknowledgment after successful receipt
                 s.sendall("ACK".encode())
 
-                with tempfile.NamedTemporaryFile(delete=True) as tmp_file:
+                with tempfile.NamedTemporaryFile(delete=True, suffix='.pkl') as tmp_file:
                     tmp_file.write(data)
-                    updated_model = tf.keras.models.load_model(tmp_file.name, compile=False)
+                    updated_model = joblib.load(tmp_file.name)
 
-                updated_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-
-                # Log details about the received model
                 logging.info("Received global model.")
-                logging.info(f"Model summary: {updated_model.summary()}")
-                logging.info(f"Number of layers in model: {len(updated_model.layers)}")
-                logging.info(f"Number of trainable parameters: {updated_model.count_params()}")
+                # Additional logging about the model can be added if needed
 
                 return updated_model
 
@@ -432,7 +430,7 @@ def consume_kafka_messages(topic_name):
 # Main execution
 # Main execution
 if __name__ == "__main__":
-    data_send_thread = threading.Thread(target=consume_kafka_messages_and_send_to_server, args=('node3_data',))
+    data_send_thread = threading.Thread(target=consume_kafka_messages_and_send_to_server, args=('node4_data',))
     data_send_thread.start()
 
     model_thread = threading.Thread(target=periodic_model_exchange)
@@ -442,4 +440,4 @@ if __name__ == "__main__":
     retraining_thread.start()
 
     plt.ion()
-    consume_kafka_messages('node3_data')
+    consume_kafka_messages('node4_data')
