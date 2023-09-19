@@ -1,6 +1,8 @@
-import json
 import logging
 import numpy as np
+import tensorflow as tf
+import json
+import joblib
 from kafka import KafkaConsumer
 import csv
 import socket
@@ -10,14 +12,21 @@ import matplotlib.pyplot as plt
 import struct 
 import pandas as pd
 import tempfile
-import joblib
-from sklearn.ensemble import RandomForestClassifier
+from kafka import KafkaProducer
+from kafka.errors import KafkaError
+
+# Initialize Kafka producer for sending data to the central server
+central_server_producer = KafkaProducer(
+    bootstrap_servers='localhost:9092',
+    value_serializer=lambda v: json.dumps(v).encode('utf-8')
+)
 
 # Define constants
-BATCH_SIZE = 1000
+BATCH_SIZE = 2500
 SERVER_HOST = 'localhost'
 SERVER_PORT = 12345
 SERVER_SEND_PORT = 12346
+KAFKA_TOPIC_TO_SERVER = 'node1_server_data' 
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -26,12 +35,15 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 total_predictions = 0
 correct_predictions = 0
 training_batch = []
+accumulated_records = []
+nn_model = tf.keras.models.load_model('/home/maith/Desktop/practical1/neural_network_model_node_2.h5')
 
-# Load Random Forest model and scaler for feature normalization
-rf_model = joblib.load('/home/maith/Desktop/practical1/random_forest_model_node_2.pkl')
-logging.info(f"Loaded model type: {type(rf_model)}")
+# Check if the model is compiled, and if not, compile it
+if not nn_model.optimizer:
+    nn_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+# Load scaler for feature normalization
 scaler = joblib.load('/home/maith/Desktop/practical1/scaler_node_2.pkl')
-
 model_lock = threading.Lock()
 prediction_lock = threading.Lock()
 accuracy_list = []
@@ -83,33 +95,35 @@ def process_data(data):
 # Function to predict if charging is needed
 def predict_need_charge(model, scaler, features):
     try:
+        # Ensure that 'features' is a DataFrame with proper feature names
         feature_names = [
             "current_speed", "battery_capacity", "charge", "consumption",
             "distance_covered", "battery_life", "distance_to_charging_point", 
             "emergency_duration"
         ]
         df = pd.DataFrame([features], columns=feature_names)
+
         features_scaled = scaler.transform(df)
         prediction = model.predict(features_scaled)
-        return int(prediction)
+        return int(prediction.round())
     except Exception as e:
         print(f"Prediction error: {e}")
         return None
 
 # Function to retrain the model with new batch of data
 def retrain_model(batch):
-    global rf_model
+    global nn_model
     X_train = [item[0] for item in batch]
     y_train = [item[1] for item in batch]
     with model_lock:
-        rf_model.fit(X_train, y_train)
+        nn_model.train_on_batch(X_train, y_train)
 
 # Function to predict and update the model
 def predict_and_update(data):
     global total_predictions
     global correct_predictions
     global training_batch
-    global rf_model
+    global nn_model
 
     print("Processing received data...")
 
@@ -121,7 +135,7 @@ def predict_and_update(data):
     ]
 
     try:
-        with open('node2_data.csv', 'a', newline='') as file:
+        with open('node1_data.csv', 'a', newline='') as file:
             writer = csv.writer(file)
             write_data_to_csv(writer, data, columns)
     except Exception as e:
@@ -131,7 +145,7 @@ def predict_and_update(data):
     try:
         features, label = process_data(data)
         with model_lock:
-            prediction_nn = predict_need_charge(rf_model, scaler, features)
+            prediction_nn = predict_need_charge(nn_model, scaler, features)
 
         print(f"Prediction: {prediction_nn}")
 
@@ -175,20 +189,12 @@ print(f"Node accuracy: {node_accuracy}")
 def exchange_model_with_server(local_model):
     MAX_RETRIES = 3
     RETRY_WAIT = 5  # Wait time before retrying (this will be increased exponentially)
-
-    if not isinstance(local_model, RandomForestClassifier):
-        logging.error("Local model is not a Random Forest classifier.")
-        return None
-    
-    if not hasattr(local_model, 'estimators_'):
-        logging.error("Local model hasn't been trained.")
-        return None
     
     logging.info("Starting model exchange with the server.")
     
-# Step 0: Serialize the model
-    with tempfile.NamedTemporaryFile(suffix='.pkl', delete=True) as tmp:
-        joblib.dump(local_model, tmp.name)
+    # Step 0: Serialize the model
+    with tempfile.NamedTemporaryFile(delete=True) as tmp:
+        local_model.save(tmp.name, save_format="h5")
         serialized_model = tmp.read()
 
     for retry in range(MAX_RETRIES):
@@ -205,7 +211,7 @@ def exchange_model_with_server(local_model):
                 logging.info(f"Successfully connected to the server at {SERVER_HOST}:{SERVER_PORT}")
 
                 logging.info("Sending local model's accuracy to the server...")
-                s.sendall(accuracy_str.encode('utf-8'))
+                s.sendall(accuracy_str.encode())
                 time.sleep(0.5)
 
                 logging.info("Sending local model to the server...")
@@ -213,7 +219,7 @@ def exchange_model_with_server(local_model):
                 logging.info("Local model sent successfully.")
 
                 # Step 2: Receive a confirmation from the server
-                confirmation = s.recv(1024).decode('utf-8')
+                confirmation = s.recv(1024)
                 if not confirmation.decode() == "READY":
                     raise Exception(f"Unexpected server confirmation: {confirmation.decode()}")
                 logging.info("Received READY confirmation from the server.")
@@ -231,12 +237,19 @@ def exchange_model_with_server(local_model):
                 # Send an acknowledgment after successful receipt
                 s.sendall("ACK".encode())
 
-            with tempfile.NamedTemporaryFile(delete=True) as tmp_file:
-                tmp_file.write(data)
-                updated_model = joblib.load(tmp_file.name)
+                with tempfile.NamedTemporaryFile(delete=True) as tmp_file:
+                    tmp_file.write(data)
+                    updated_model = tf.keras.models.load_model(tmp_file.name, compile=False)
 
-            # Rest of function unchanged
-            return updated_model
+                updated_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+                # Log details about the received model
+                logging.info("Received global model.")
+                logging.info(f"Model summary: {updated_model.summary()}")
+                logging.info(f"Number of layers in model: {len(updated_model.layers)}")
+                logging.info(f"Number of trainable parameters: {updated_model.count_params()}")
+
+                return updated_model
 
         except socket.timeout:
             logging.error("Socket operation timed out. Retrying...")
@@ -259,19 +272,19 @@ def print_model_accuracy():
 
 # Function for periodic model exchange with the server
 def periodic_model_exchange():
-    global rf_model, correct_predictions, total_predictions
+    global nn_model, correct_predictions, total_predictions
     while True:
-        time.sleep(60)  # Wait for a specified time interval (1 minute)
+        time.sleep(120)  
         try:
             print_model_accuracy()  # Before exchanging models
-            updated_model = exchange_model_with_server(rf_model)
+            updated_model = exchange_model_with_server(nn_model)
             if updated_model is None:
                 print("Model is None.")
             else:
                 # Sleep for 1 minute before applying the updated model
                 time.sleep(5)
                 with model_lock:
-                    rf_model = updated_model
+                    nn_model = updated_model
 
                 # Reset prediction counters after model exchange
                 correct_predictions = 0
@@ -279,6 +292,49 @@ def periodic_model_exchange():
             print_model_accuracy()  # After exchanging models
         except Exception as e:
             print(f"Error during model exchange: {e}")
+
+# Function to send accumulated data to the central server via Kafka
+def send_accumulated_data_to_server():
+    global accumulated_records
+    try:
+        if accumulated_records:
+            for record in accumulated_records:
+                central_server_producer.send(KAFKA_TOPIC_TO_SERVER, value=record)
+            central_server_producer.flush()
+            logging.info(f"Sent {len(accumulated_records)} records to the central server via Kafka.")
+            accumulated_records = []
+    except Exception as e:
+        logging.error(f"Failed to send data to the central server via Kafka: {e}")
+
+def consume_kafka_messages_and_send_to_server(topic_name):
+    try:
+        consumer = KafkaConsumer(
+            topic_name,
+            bootstrap_servers='localhost:9092',
+            value_deserializer=lambda v: json.loads(v.decode('utf-8')),
+            auto_offset_reset='earliest'
+        )
+
+        for _, msg in enumerate(consumer):
+            data = msg.value
+            print(f"Received from {topic_name}: {data}")
+            
+            # Append the received data to accumulated_records
+            accumulated_records.append(data)
+
+            if len(accumulated_records) >= BATCH_SIZE:
+                send_accumulated_data_to_server()
+
+    except Exception as e:
+        print(f"Kafka consumption error: {e}")
+
+# Function to send data to the central server
+def send_data_to_server(data):
+    global accumulated_records
+    accumulated_records.append(data)
+
+    if len(accumulated_records) >= BATCH_SIZE:
+        send_accumulated_data_to_server()
 
 # Function to consume messages from a Kafka topic
 def consume_kafka_messages(topic_name):
@@ -301,7 +357,10 @@ def consume_kafka_messages(topic_name):
 
 # Main execution
 if __name__ == "__main__":
+    data_send_thread = threading.Thread(target=consume_kafka_messages_and_send_to_server, args=('node1_data',))
+    data_send_thread.start()
+
     model_thread = threading.Thread(target=periodic_model_exchange)
     model_thread.start()
     plt.ion()
-    consume_kafka_messages('node2_data')
+    consume_kafka_messages('node1_data')

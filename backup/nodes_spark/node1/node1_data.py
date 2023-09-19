@@ -12,12 +12,22 @@ import matplotlib.pyplot as plt
 import struct 
 import pandas as pd
 import tempfile
+from kafka import KafkaProducer
+from kafka.errors import KafkaError
+
+# Initialize Kafka producer for sending data to the central server
+central_server_producer = KafkaProducer(
+    bootstrap_servers='localhost:9092',
+    value_serializer=lambda v: json.dumps(v).encode('utf-8')
+)
 
 # Define constants
-BATCH_SIZE = 1000
+BATCH_SIZE = 2500
 SERVER_HOST = 'localhost'
 SERVER_PORT = 12345
 SERVER_SEND_PORT = 12346
+KAFKA_TOPIC_TO_SERVER = 'node1_server_data'
+TIME_INTERVAL = 60
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -26,6 +36,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 total_predictions = 0
 correct_predictions = 0
 training_batch = []
+accumulated_records = []
 nn_model = tf.keras.models.load_model('/home/maith/Desktop/practical1/neural_network_model_node_1.h5')
 
 # Check if the model is compiled, and if not, compile it
@@ -260,14 +271,16 @@ def print_model_accuracy():
         node_accuracy = correct_predictions / total_predictions if total_predictions > 0 else 0
         print(f"Node accuracy: {node_accuracy:.2f}%")
 
+
 # Function for periodic model exchange with the server
 def periodic_model_exchange():
     global nn_model, correct_predictions, total_predictions
     while True:
-        time.sleep(60)  # Wait for a specified time interval (1 minute)
+        time.sleep(TIME_INTERVAL)  
         try:
             print_model_accuracy()  # Before exchanging models
             updated_model = exchange_model_with_server(nn_model)
+            TIME_INTERVAL = 600
             if updated_model is None:
                 print("Model is None.")
             else:
@@ -283,29 +296,49 @@ def periodic_model_exchange():
         except Exception as e:
             print(f"Error during model exchange: {e}")
 
-# Function to send data continuously to the central server
-def send_data_continuously():
-    while True:
-        # Create a dictionary containing the data you want to send
-        data_to_send = {
-            "timestamp": time.time(),  # Add relevant data here
-            "current_speed": 55.5,  # Add relevant data here
-            "battery_capacity": 80.0,  # Add relevant data here
-            # Add more data fields as needed
-        }
+# Function to send accumulated data to the central server via Kafka
+def send_accumulated_data_to_server():
+    global accumulated_records
+    try:
+        if accumulated_records:
+            for record in accumulated_records:
+                central_server_producer.send(KAFKA_TOPIC_TO_SERVER, value=record)
+            central_server_producer.flush()
+            logging.info(f"Sent {len(accumulated_records)} records to the central server via Kafka.")
+            accumulated_records = []
+    except Exception as e:
+        logging.error(f"Failed to send data to the central server via Kafka: {e}")
 
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.connect((SERVER_HOST, SERVER_SEND_PORT))
-                data_json = json.dumps(data_to_send)
-                s.sendall(data_json.encode())
-                logging.info("Sent data to the central server.")
-        except Exception as e:
-            logging.error(f"Failed to send data to the central server: {e}")
+def consume_kafka_messages_and_send_to_server(topic_name):
+    try:
+        consumer = KafkaConsumer(
+            topic_name,
+            bootstrap_servers='localhost:9092',
+            value_deserializer=lambda v: json.loads(v.decode('utf-8')),
+            auto_offset_reset='earliest'
+        )
 
-        # Adjust the sleep interval according to your requirements
-        time.sleep(10)  # Send data every 10 seconds
-        
+        for _, msg in enumerate(consumer):
+            data = msg.value
+            print(f"Received from {topic_name}: {data}")
+            
+            # Append the received data to accumulated_records
+            accumulated_records.append(data)
+
+            if len(accumulated_records) >= BATCH_SIZE:
+                send_accumulated_data_to_server()
+
+    except Exception as e:
+        print(f"Kafka consumption error: {e}")
+
+# Function to send data to the central server
+def send_data_to_server(data):
+    global accumulated_records
+    accumulated_records.append(data)
+
+    if len(accumulated_records) >= BATCH_SIZE:
+        send_accumulated_data_to_server()
+
 # Function to consume messages from a Kafka topic
 def consume_kafka_messages(topic_name):
     print("Starting Kafka consumer...")
@@ -327,9 +360,9 @@ def consume_kafka_messages(topic_name):
 
 # Main execution
 if __name__ == "__main__":
-    data_send_thread = threading.Thread(target=send_data_continuously)
+    data_send_thread = threading.Thread(target=consume_kafka_messages_and_send_to_server, args=('node1_data',))
     data_send_thread.start()
-    
+
     model_thread = threading.Thread(target=periodic_model_exchange)
     model_thread.start()
     plt.ion()

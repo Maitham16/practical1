@@ -1,15 +1,17 @@
 import csv
 import json
+import os
 import socket
 import threading
 from kafka import KafkaConsumer
+import pandas as pd
 import tensorflow as tf
 import tempfile
 import struct
 import numpy as np
 from tensorflow.keras import layers
 from tensorflow.keras import regularizers
-import tensorflow_federated as tff
+from tensorflow.keras.callbacks import Callback
 import logging
 
 # Logging Configuration
@@ -21,30 +23,23 @@ SERVER_HOST = 'localhost'
 SERVER_PORT = 12345
 SERVER_SEND_PORT = 12346
 BROKER_ADDRESS = 'localhost:9092'
-topic_name = ['node1_server_data', 'node2_server_data', 'node3_server_data', 'node4_server_data']
+TOPIC_NAMES = ['node1_server_data', 'node2_server_data', 'node3_server_data', 'node4_server_data']
 NUM_NODES = 4
-AGGREGATION_THRESHOLD = 4
+EXPECTED_COLUMNS = 18
 filename = "central_server_data.csv"
 
-def check_columns(filename, expected_columns):
-    """Check if rows in the CSV file have the expected number of columns."""
-    incorrect_lines = []
-    with open(filename, 'r') as csvfile:
-        reader = csv.reader(csvfile)
-        for line_num, row in enumerate(reader, 1):
-            if len(row) != expected_columns:
-                incorrect_lines.append((line_num, len(row)))
-    return incorrect_lines
+class LoggingCallback(Callback):
+    def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
+        logger.info(f"End of Epoch {epoch + 1}. Loss: {logs.get('loss')}, Accuracy: {logs.get('accuracy')}")
 
-# Check CSV columns
-expected_columns = 18
-issues = check_columns(filename, expected_columns)
-if issues:
-    for line_num, col_count in issues:
-        print(f"Line #{line_num} (got {col_count} columns instead of {expected_columns})")
-else:
-    print("All rows have the expected number of columns.")
+def write_data_to_csv(writer, data, columns):
+    try:
+        writer.writerow([data[col] for col in columns])
+    except Exception as e:
+        print(f"Failed to write data to CSV: {e}")
 
+# Utility Functions
 def save_data_to_csv(data):
     """Save provided data to CSV."""
     columns = [
@@ -54,97 +49,20 @@ def save_data_to_csv(data):
         "weather", "traffic", "road_gradient", "emergency", "emergency_duration"
     ]
 
-    # Append data to the CSV
-    with open(filename, 'w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(columns)
+    try:
+        file_exists = os.path.isfile('central_server_data.csv')
 
-def process_data(data):
-    """Process data and return feature set and label."""
-    data['needs_charge'] = 1 if float(data['charge']) <= 50 else 0
-    features = [
-        float(data["current_speed"]),
-        float(data["battery_capacity"]),
-        float(data["charge"]),
-        float(data["consumption"]),
-        float(data["distance_covered"]),
-        float(data["battery_life"]),
-        float(data["distance_to_charging_point"]),
-        float(data["emergency_duration"])
-    ]
-    if np.isinf(features[6]):
-        features[6] = np.nan
-    label = data['needs_charge']
-    return features, label
-
-def extract_data_from_csv(filename):
-    """Extract feature set and labels from a CSV file."""
-    features_list = []
-    labels_list = []
-
-    with open(filename, 'r') as csvfile:
-        reader = csv.DictReader(csvfile)
-        
-        for row in reader:
-            features, label = process_data(row)
-            features_list.append(features)
-            labels_list.append(label)
-            
-    return features_list, labels_list
-
-# Use the functions:
-filename = "your_file_path_here.csv"
-expected_columns = 18
-issues = check_columns(filename, expected_columns)
-
-if issues:
-    for line_num, col_count in issues:
-        print(f"Line #{line_num} (got {col_count} columns instead of {expected_columns})")
-else:
-    features, labels = extract_data_from_csv(filename)
-    print(features, labels)
-
-def train_global_model():
-    """Train the global model."""
-    X, y = load_csv_data("central_server_data.csv", input_features)
-
-    with global_model_lock:
-        global_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-        global_model.fit(X, y, epochs=100, batch_size=32, verbose=1)
-        score = global_model.evaluate(X, y, verbose=1)
-        logger.info("Test loss: %s", score[0])
-        logger.info("Test accuracy: %s", score[1])
-
-
-# Function to create a blank model
-def create_blank_model(input_features=18):
-    """Create and return a blank model."""
-    model = tf.keras.models.Sequential([
-        layers.Dense(12, activation='relu', kernel_regularizer=regularizers.l2(0.01), input_shape=(input_features,)),  # L2 regularization
-        layers.Dense(8, activation='relu', kernel_regularizer=regularizers.l2(0.01)),  # L2 regularization
-        layers.Dense(1, activation='sigmoid')
-    ])
-    return model
-
-# Global Model Initialization
-input_features = 18  
-global_model = create_blank_model(input_features)
-global_model_lock = threading.Lock()
-received_models_lock = threading.Lock() 
-received_models = []
-received_accuracies = []
-
-def load_csv_data(filename, num_features=18):
-    """Load data from CSV and return features and labels."""
-    data = np.genfromtxt(filename, delimiter=',', skip_header=1)
+        with open('central_server_data.csv', 'a', newline='') as file:
+            writer = csv.writer(file)
+            if not file_exists:
+                writer.writerow(columns)  # Write headers if file doesn't exist
+            write_data_to_csv(writer, data, columns)
+    except Exception as e:
+        print(f"Failed to write to CSV: {e}")
+        return
     
-    # Adjust this if the number of features and the column with your labels changes
-    X = data[:, :num_features]
-    y = data[:, num_features]  # Assuming that the next column after features is the label
+    print(f"Saved data to CSV: {data}")
 
-    return X, y
-
-# Utility Functions
 def send_large_data(sock, data):
     """Send large data over a socket."""
     data_size = len(data)
@@ -162,22 +80,133 @@ def receive_large_data(sock):
         received_data += more_data
     return received_data
 
-def aggregate_models_simple_average(models):
-    """Aggregate models using a simple average."""
+def send_global_model_to_node(client_socket, client_address):
+    """Send the global model to a node."""
+    with tempfile.NamedTemporaryFile(delete=True) as tmp:
+        with global_model_lock:  # Locking while accessing global_model
+            global_model.save(tmp.name, save_format="h5")
+            serialized_model = tmp.read()
+
+        logger.info("Sending global model to node (%s)", client_address[0])
+        try:
+            send_large_data(client_socket, serialized_model)
+        except BrokenPipeError:
+            print("Client disconnected before data could be sent.")
+        client_socket.close()
+
+def process_data(row):
+    """Process data and return feature set and label."""
+    # Mapping indices to the columns from the CSV
+    data = {
+        "charge": row[5],
+        "distance_to_charging_point": row[12],
+        "current_speed": row[3],
+        "battery_capacity": row[4],
+        "consumption": row[6],
+        "distance_covered": row[10],
+        "battery_life": row[11],
+        "emergency_duration": row[17]
+    }
+
+    data['needs_charge'] = 1 if float(data['charge']) <= 50 else 0
+    features = [
+        data["current_speed"],
+        data["battery_capacity"],
+        data["charge"],
+        data["consumption"],
+        data["distance_covered"],
+        data["battery_life"],
+        data["distance_to_charging_point"],
+        data["emergency_duration"]
+    ]
+    if np.isinf(features[6]):
+        features[6] = np.nan
+    label = data['needs_charge']
+    return features, label
+
+def load_csv_data(filename, num_features=8):
+    """Load data from CSV and return features and labels."""
+    data = np.genfromtxt(filename, delimiter=',', skip_header=1)
+
+    # Check if data is one-dimensional
+    if len(data.shape) == 1:
+        data = data.reshape(1, -1)  # Reshape to 2D
+
+    X = data[:, :num_features]
+    y = data[:, num_features]
+
+    return X, y
+
+# Model Related Functions
+def create_blank_model(input_features=8):
+    """Create and return a blank model."""
+    model = tf.keras.models.Sequential([
+        layers.Dense(12, activation='relu', kernel_regularizer=regularizers.l2(0.01), input_shape=(input_features,)),  # L2 regularization
+        layers.Dense(8, activation='relu', kernel_regularizer=regularizers.l2(0.01)),  # L2 regularization
+        layers.Dense(1, activation='sigmoid')
+    ])
+    return model
+
+# Global Model Initialization
+input_features = 8  
+global_model = create_blank_model(input_features)
+global_model_lock = threading.Lock()
+received_models_lock = threading.Lock() 
+received_models = []
+received_accuracies = []
+
+def train_global_model():
+    """Train the global model."""
+    print("train_global_model function is called!") 
+
+    # Load raw data
+    raw_data = np.genfromtxt("central_server_data.csv", delimiter=',', skip_header=1)
+
+    # Process data
+    processed_data = [process_data(row) for row in raw_data]
+    X = np.array([item[0] for item in processed_data])
+    y = np.array([item[1] for item in processed_data])
+
+    with global_model_lock:
+        global_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+        
+        # Log the start of training
+        logger.info("Starting training of the global model...")
+        
+        global_model.fit(X, y, epochs=100, batch_size=32, verbose=1,
+                         callbacks=[LoggingCallback()])
+        
+        score = global_model.evaluate(X, y, verbose=1)
+        
+        logger.info("Test loss: %s", score[0])
+        logger.info("Test accuracy: %s", score[1])
+
+        # Log the completion of training
+        logger.info("Training of the global model completed.")
+
+def aggregate_models_federated_averaging(models, accuracies):
+    """Aggregate models using Federated Averaging."""
+    # Calculate the weights for each model
+    weights = [accuracy / sum(accuracies) for accuracy in accuracies]
+
+    # Get the reference weights from the first model
     reference_weights = models[0].get_weights()
     averaged_weights = []
 
     for i in range(len(reference_weights)):
         layer_weights_list = np.array([model.get_weights()[i] for model in models])
-        averaged_weights.append(np.mean(layer_weights_list, axis=0))
+        averaged_weights.append(np.average(layer_weights_list, axis=0, weights=weights))
 
     with global_model_lock:
         global_model.set_weights(averaged_weights)
     global_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
+# Kafka and Networking Functions
 def handle_client_connection(client_socket, client_address):
     """Handle the client connection for incoming models."""
     global received_models, received_accuracies
+    
+    print(f"Handling connection from client {client_address[0]}")
 
     try:
         # Receiving the accuracy and model
@@ -192,13 +221,13 @@ def handle_client_connection(client_socket, client_address):
             with received_models_lock: 
                 received_models.append(local_model)
                 received_accuracies.append(accuracy)
-                all_models_received = len(received_models) == NUM_NODES
+                all_models_received = len(received_models)
 
         # Aggregating
-        if all_models_received:
+        if all_models_received == 4:
             with received_models_lock:
                 logger.info("All models received. Aggregating...")
-                aggregate_models_simple_average(received_models)
+                aggregate_models_federated_averaging(received_models, received_accuracies)
                 received_models = []
                 received_accuracies = []
                 logger.info("Aggregation complete.")
@@ -206,14 +235,7 @@ def handle_client_connection(client_socket, client_address):
             # Training the aggregated global model
             train_global_model()
 
-            # Send the trained aggregated model
-            with tempfile.NamedTemporaryFile(delete=True) as tmp:
-                global_model.save(tmp.name, save_format="h5")
-            serialized_model = tmp.read()
-
-            logger.info("Sending trained aggregated global model to node")
-            send_large_data(client_socket, serialized_model)
-
+        print("About to send READY confirmation to client")
         client_socket.send("READY".encode())
         logger.info("Sent READY confirmation to client")
 
@@ -223,22 +245,10 @@ def handle_client_connection(client_socket, client_address):
     finally:
         client_socket.close()
 
-def send_global_model_to_node(client_socket, client_address):
-    """Send the global model to a node."""
-    with tempfile.NamedTemporaryFile(delete=True) as tmp:
-        with global_model_lock:  # Locking while accessing global_model
-            global_model.save(tmp.name, save_format="h5")
-        serialized_model = tmp.read()
-
-        logger.info("Sending global model to node (%s)", client_address[0])
-        send_large_data(client_socket, serialized_model)
-        
-        # Close the connection after sending
-        client_socket.close()
-
 def consume_kafka_messages(topic_names):
     """Consume messages from Kafka topics."""
     print("Starting Kafka consumer...")
+    msg = None
     try:
         consumer = KafkaConsumer(
             *topic_names,
@@ -251,18 +261,22 @@ def consume_kafka_messages(topic_names):
 
         for _, msg in enumerate(consumer):
             data = msg.value
-            print(f"Received from {msg.topic}: {data}")
+            print(f"Processed Kafka message from topic {msg.topic}: {data}")
             save_data_to_csv(data)
-        
+
     except Exception as e:
-        print(f"Kafka consumption error: {e}")
+        error_msg = f"Kafka consumption error: {e}"
+        if msg:
+            error_msg += f", Last processed message topic: {msg.topic}"
+        print(error_msg)
+
         
 # Main Server Functions
 if __name__ == "__main__":
 
     def kafka_consumer_thread():
             """Start Kafka Consumer."""
-            consume_kafka_messages(topic_name)
+            consume_kafka_messages(TOPIC_NAMES)
 
     def receive_thread():
         """Listen for incoming models from nodes."""
