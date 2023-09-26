@@ -55,7 +55,7 @@ def save_data_to_csv(data):
         with open('central_server_data.csv', 'a', newline='') as file:
             writer = csv.writer(file)
             if not file_exists:
-                writer.writerow(columns)  # Write headers if file doesn't exist
+                writer.writerow(columns)
             write_data_to_csv(writer, data, columns)
     except Exception as e:
         print(f"Failed to write to CSV: {e}")
@@ -130,7 +130,7 @@ def load_csv_data(filename, num_features=8):
 
     # Check if data is one-dimensional
     if len(data.shape) == 1:
-        data = data.reshape(1, -1)  # Reshape to 2D
+        data = data.reshape(1, -1)
 
     X = data[:, :num_features]
     y = data[:, num_features]

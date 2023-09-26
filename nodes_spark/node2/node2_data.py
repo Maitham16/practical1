@@ -26,7 +26,8 @@ BATCH_SIZE = 2500
 SERVER_HOST = 'localhost'
 SERVER_PORT = 12345
 SERVER_SEND_PORT = 12346
-KAFKA_TOPIC_TO_SERVER = 'node1_server_data' 
+KAFKA_TOPIC_TO_SERVER = 'node2_server_data'
+TIME_INTERVAL = 60
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -38,7 +39,7 @@ training_batch = []
 accumulated_records = []
 nn_model = tf.keras.models.load_model('/home/maith/Desktop/practical1/neural_network_model_node_2.h5')
 
-# Check if the model is compiled, and if not, compile it
+# Check if the model is compiled
 if not nn_model.optimizer:
     nn_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
@@ -135,7 +136,7 @@ def predict_and_update(data):
     ]
 
     try:
-        with open('node1_data.csv', 'a', newline='') as file:
+        with open('node2_data.csv', 'a', newline='') as file:
             writer = csv.writer(file)
             write_data_to_csv(writer, data, columns)
     except Exception as e:
@@ -188,7 +189,7 @@ print(f"Node accuracy: {node_accuracy}")
 # Function to exchange model with server
 def exchange_model_with_server(local_model):
     MAX_RETRIES = 3
-    RETRY_WAIT = 5  # Wait time before retrying (this will be increased exponentially)
+    RETRY_WAIT = 5
     
     logging.info("Starting model exchange with the server.")
     
@@ -205,7 +206,7 @@ def exchange_model_with_server(local_model):
 
             # Step 1: Node sends its model to the server
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(10)  # Setting a 10-second timeout for socket operations
+                s.settimeout(10)
                 logging.info(f"Attempting to connect to the server at {SERVER_HOST}:{SERVER_PORT}")
                 s.connect((SERVER_HOST, SERVER_PORT))
                 logging.info(f"Successfully connected to the server at {SERVER_HOST}:{SERVER_PORT}")
@@ -270,14 +271,16 @@ def print_model_accuracy():
         node_accuracy = correct_predictions / total_predictions if total_predictions > 0 else 0
         print(f"Node accuracy: {node_accuracy:.2f}%")
 
+
 # Function for periodic model exchange with the server
 def periodic_model_exchange():
     global nn_model, correct_predictions, total_predictions
     while True:
-        time.sleep(120)  
+        time.sleep(TIME_INTERVAL)  
         try:
             print_model_accuracy()  # Before exchanging models
             updated_model = exchange_model_with_server(nn_model)
+            TIME_INTERVAL = 600
             if updated_model is None:
                 print("Model is None.")
             else:
@@ -357,10 +360,10 @@ def consume_kafka_messages(topic_name):
 
 # Main execution
 if __name__ == "__main__":
-    data_send_thread = threading.Thread(target=consume_kafka_messages_and_send_to_server, args=('node1_data',))
+    data_send_thread = threading.Thread(target=consume_kafka_messages_and_send_to_server, args=('node2_data',))
     data_send_thread.start()
 
     model_thread = threading.Thread(target=periodic_model_exchange)
     model_thread.start()
     plt.ion()
-    consume_kafka_messages('node1_data')
+    consume_kafka_messages('node2_data')

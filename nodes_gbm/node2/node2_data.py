@@ -28,7 +28,7 @@ BATCH_SIZE = 2500
 SERVER_HOST = 'localhost'
 SERVER_PORT = 12345
 SERVER_SEND_PORT = 12346
-KAFKA_TOPIC_TO_SERVER = 'node4_server_data'
+KAFKA_TOPIC_TO_SERVER = 'node2_server_data'
 TIME_INTERVAL = 60
 RETRAIN_INTERVAL = 100
 
@@ -40,10 +40,10 @@ total_predictions = 0
 correct_predictions = 0
 training_batch = []
 accumulated_records = []
-gbm_model = joblib.load('/home/maith/Desktop/practical1/models/gbm_model_node4.pkl')
+gbm_model = joblib.load('/home/maith/Desktop/practical1/models/gbm_model_node2.pkl')
 
 # Load scaler for feature normalization
-scaler = joblib.load('/home/maith/Desktop/practical1/models/gbm_scaler_node4.pkl')
+scaler = joblib.load('/home/maith/Desktop/practical1/models/gbm_scaler_node2.pkl')
 model_lock = threading.Lock()
 prediction_lock = threading.Lock()
 accuracy_list = []
@@ -108,7 +108,7 @@ def preprocess_data(data_list):
 def retrain_model(preprocessed_data_batch):
     global gbm_model
 
-    # As the data is already preprocessed, just unpack it
+    # unpack the data batch
     X, y = preprocessed_data_batch
     
     try:
@@ -125,7 +125,7 @@ def periodic_retraining():
         with model_lock:
             logging.info("Starting periodic retraining...")
             preprocessed_data_batch = load_and_preprocess_data()
-            if len(preprocessed_data_batch[0]) > 0:  # Ensure there is data
+            if len(preprocessed_data_batch[0]) > 0:
                 retrain_model(preprocessed_data_batch)
                 logging.info("Periodic retraining completed.")
             else:
@@ -154,7 +154,7 @@ def preprocess_single_row(data_row):
 
 def load_and_preprocess_data():
     """ Load the last 15000 records from the CSV file and preprocess them. """
-    data = pd.read_csv('/home/maith/Desktop/practical1/nodes_gbm/node4/node4_data.csv')
+    data = pd.read_csv('/home/maith/Desktop/practical1/nodes_gbm/node2/node2_data.csv')
     print(data.columns)
     last_15000_records = data.tail(15000)
     
@@ -203,8 +203,8 @@ def predict_and_update(data):
     ]
 
     try:
-        write_header = not os.path.exists('node4_data.csv') 
-        with open('node4_data.csv', 'a', newline='') as file:
+        write_header = not os.path.exists('node2_data.csv') 
+        with open('node2_data.csv', 'a', newline='') as file:
             writer = csv.writer(file)
             if write_header:
                 writer.writerow(columns)
@@ -262,7 +262,7 @@ print(f"Node accuracy: {node_accuracy}")
 # Function to exchange model with server
 def exchange_model_with_server(local_model):
     MAX_RETRIES = 3
-    RETRY_WAIT = 5  # Wait time before retrying (this will be increased exponentially)
+    RETRY_WAIT = 5
     
     logging.info("Starting model exchange with the server.")
     
@@ -317,7 +317,6 @@ def exchange_model_with_server(local_model):
                     updated_model = joblib.load(tmp_file.name)
 
                 logging.info("Received global model.")
-                # Additional logging about the model can be added if needed
 
                 return updated_model
 
@@ -430,7 +429,7 @@ def consume_kafka_messages(topic_name):
 # Main execution
 # Main execution
 if __name__ == "__main__":
-    data_send_thread = threading.Thread(target=consume_kafka_messages_and_send_to_server, args=('node4_data',))
+    data_send_thread = threading.Thread(target=consume_kafka_messages_and_send_to_server, args=('node2_data',))
     data_send_thread.start()
 
     model_thread = threading.Thread(target=periodic_model_exchange)
@@ -440,4 +439,4 @@ if __name__ == "__main__":
     retraining_thread.start()
 
     plt.ion()
-    consume_kafka_messages('node4_data')
+    consume_kafka_messages('node2_data')

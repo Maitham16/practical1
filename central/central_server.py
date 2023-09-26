@@ -83,7 +83,7 @@ def handle_client_connection(client_socket, client_address):
 
         with received_models_lock:  # Locking while updating received_models and received_accuracies
             received_models.append(local_model)
-            received_accuracies.append(accuracy)  # Store the accuracy
+            received_accuracies.append(accuracy)
             all_models_received = len(received_models) == NUM_NODES
 
     if len(received_models) == AGGREGATION_THRESHOLD:
@@ -100,7 +100,7 @@ def handle_client_connection(client_socket, client_address):
 
         # Now send the updated global model back to all nodes
         with tempfile.NamedTemporaryFile(delete=True) as tmp:
-            with global_model_lock:  # Locking while accessing global_model
+            with global_model_lock:
                 global_model.save(tmp.name, save_format="h5")
             serialized_model = tmp.read()
             
@@ -118,7 +118,7 @@ def handle_client_connection(client_socket, client_address):
 
 def send_global_model_to_node(client_socket, client_address):
     with tempfile.NamedTemporaryFile(delete=True) as tmp:
-        with global_model_lock:  # Locking while accessing global_model
+        with global_model_lock:
             global_model.save(tmp.name, save_format="h5")
         serialized_model = tmp.read()
 

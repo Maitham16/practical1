@@ -108,7 +108,7 @@ def preprocess_data(data_list):
 def retrain_model(preprocessed_data_batch):
     global gbm_model
 
-    # As the data is already preprocessed, just unpack it
+    # unpack the data batch
     X, y = preprocessed_data_batch
     
     try:
@@ -125,7 +125,7 @@ def periodic_retraining():
         with model_lock:
             logging.info("Starting periodic retraining...")
             preprocessed_data_batch = load_and_preprocess_data()
-            if len(preprocessed_data_batch[0]) > 0:  # Ensure there is data
+            if len(preprocessed_data_batch[0]) > 0:
                 retrain_model(preprocessed_data_batch)
                 logging.info("Periodic retraining completed.")
             else:
@@ -262,7 +262,7 @@ print(f"Node accuracy: {node_accuracy}")
 # Function to exchange model with server
 def exchange_model_with_server(local_model):
     MAX_RETRIES = 3
-    RETRY_WAIT = 5  # Wait time before retrying (this will be increased exponentially)
+    RETRY_WAIT = 5
     
     logging.info("Starting model exchange with the server.")
     
@@ -317,7 +317,6 @@ def exchange_model_with_server(local_model):
                     updated_model = joblib.load(tmp_file.name)
 
                 logging.info("Received global model.")
-                # Additional logging about the model can be added if needed
 
                 return updated_model
 

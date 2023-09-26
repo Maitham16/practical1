@@ -47,7 +47,7 @@ def save_data_to_csv(data):
         with open('central_server_data.csv', 'a', newline='') as file:
             writer = csv.writer(file)
             if not file_exists:
-                writer.writerow(columns)  # Write headers if file doesn't exist
+                writer.writerow(columns)
             write_data_to_csv(writer, data, columns)
     except Exception as e:
         print(f"Failed to write to CSV: {e}")

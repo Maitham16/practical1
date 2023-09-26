@@ -135,7 +135,7 @@ def periodic_retraining():
         with model_lock:
             logging.info("Starting periodic retraining...")
             preprocessed_data_batch = load_and_preprocess_data()
-            if len(preprocessed_data_batch[0]) > 0:  # Ensure there is data
+            if len(preprocessed_data_batch[0]) > 0: 
                 retrain_model(preprocessed_data_batch)
                 logging.info("Periodic retraining completed.")
             else:
@@ -279,7 +279,7 @@ logging.info(f"Node accuracy: {node_accuracy}")
 # Function to exchange model with server
 def exchange_model_with_server(local_model):
     MAX_RETRIES = 3
-    RETRY_WAIT = 5  # Wait time before retrying (this will be increased exponentially)
+    RETRY_WAIT = 5
     
     logging.info("Starting model exchange with the server.")
     
@@ -445,7 +445,6 @@ def consume_kafka_messages(topic_name):
     except Exception as e:
         logging.error(f"Kafka consumption error: {e}")
 
-# Main execution
 # Main execution
 if __name__ == "__main__":
     data_send_thread = threading.Thread(target=consume_kafka_messages_and_send_to_server, args=('node1_data',))

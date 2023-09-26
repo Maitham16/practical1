@@ -28,7 +28,7 @@ correct_predictions = 0
 training_batch = []
 nn_model = tf.keras.models.load_model('/home/maith/Desktop/practical1/neural_network_model_node_1.h5')
 
-# Check if the model is compiled, and if not, compile it
+# Check if the model is compiled
 if not nn_model.optimizer:
     nn_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
@@ -178,7 +178,7 @@ print(f"Node accuracy: {node_accuracy}")
 # Function to exchange model with server
 def exchange_model_with_server(local_model):
     MAX_RETRIES = 3
-    RETRY_WAIT = 5  # Wait time before retrying (this will be increased exponentially)
+    RETRY_WAIT = 5
     
     logging.info("Starting model exchange with the server.")
     
