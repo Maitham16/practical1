@@ -57,7 +57,6 @@ def plot_accuracy():
     plt.title('Prediction Accuracy Over Time')
     plt.pause(0.01)
 
-# Function to write data to CSV file
 def write_data_to_csv(writer, data, columns):
     try:
         writer.writerow([data[col] for col in columns])
