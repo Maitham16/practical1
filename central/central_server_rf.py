@@ -271,7 +271,7 @@ def consume_kafka_messages(topic_names):
         print(error_msg)
 
         
-# Main Server Functions
+# Main Server Function
 if __name__ == "__main__":
 
     def kafka_consumer_thread():

@@ -196,7 +196,7 @@ def aggregate_models_federated_averaging(models, accuracies):
     total_coef = np.zeros_like(models[0].coef_)
     total_intercept = 0
 
-    # Sum all model weights
+    # Sum all models weights
     for model in models:
         total_coef += model.coef_
         total_intercept += model.intercept_

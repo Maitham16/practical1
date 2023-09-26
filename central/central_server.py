@@ -51,7 +51,6 @@ def receive_large_data(sock):
         received_data += more_data
     return received_data
 
-# Function to aggregate the local models into the global model
 def aggregate_models_simple_average(models):
     """Aggregate weights from multiple models using a simple average."""
     reference_weights = models[0].get_weights()
