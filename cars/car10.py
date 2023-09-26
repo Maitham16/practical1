@@ -85,7 +85,7 @@ def handle_emergency_situations(data):
 
 def update_car_data_while_moving(data, distance_step):
     # Updating location, distance covered, and current speed
-    data['location'] += distance_step # km
+    data['location'] += distance_step
     data['distance_covered'] += distance_step # km
 
     speed_factor = data['current_speed'] / BASE_SPEED 
