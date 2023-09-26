@@ -123,7 +123,7 @@ def start_consumer(topic_name, csv_filename):
             file.close()
 
 if __name__ == "__main__":
-    plt.ion()  # Turn on interactive mode
+    plt.ion()
     start_consumer('node3_data', 'node3_data.csv')
     plt.ioff()  # Turn off interactive mode
     plt.show()
