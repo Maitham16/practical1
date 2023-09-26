@@ -427,7 +427,6 @@ def consume_kafka_messages(topic_name):
         print(f"Kafka consumption error: {e}")
 
 # Main execution
-# Main execution
 if __name__ == "__main__":
     data_send_thread = threading.Thread(target=consume_kafka_messages_and_send_to_server, args=('node3_data',))
     data_send_thread.start()
